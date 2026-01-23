@@ -93,7 +93,7 @@ export default function Profile() {
 
   return (
     <MobileLayout>
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 page-fade">
         <Card>
           <CardContent className="pt-6">
             {/* Avatar */}

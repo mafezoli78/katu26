@@ -97,7 +97,7 @@ export default function Waves() {
 
   return (
     <MobileLayout>
-      <div className="p-4">
+      <div className="p-4 page-fade">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-xl font-bold">Acenos</h1>
           {unreadCount > 0 && (
