@@ -116,7 +116,7 @@ export default function Location() {
         <img src={logoKatu} alt="Katu" className="w-16 h-auto" />
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 page-enter">
         {/* Detecting location */}
         {step === 'detecting' && (
           <Card>

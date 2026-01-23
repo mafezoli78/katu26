@@ -80,7 +80,7 @@ export default function Home() {
 
   return (
     <MobileLayout>
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 page-fade">
         {/* Presence status card */}
         <Card className="bg-primary text-primary-foreground">
           <CardContent className="p-4">

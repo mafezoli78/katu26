@@ -162,7 +162,7 @@ export default function Onboarding() {
         ))}
       </div>
 
-      <div className="p-4 animate-slide-up">
+      <div className="p-4 page-enter">
         {/* Step 1: Basic Info */}
         {step === 1 && (
           <Card>

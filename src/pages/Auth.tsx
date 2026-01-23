@@ -96,12 +96,12 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-primary flex flex-col">
       {/* Header with logo */}
-      <div className="flex-1 flex items-center justify-center py-8">
+      <div className="flex-1 flex items-center justify-center py-8 animate-fade-in">
         <img src={logoKatu} alt="Katu" className="w-32 h-auto" />
       </div>
 
       {/* Auth card */}
-      <Card className="rounded-t-3xl rounded-b-none border-0 shadow-2xl">
+      <Card className="rounded-t-3xl rounded-b-none border-0 shadow-2xl animate-slide-up">
         <CardHeader className="space-y-1 pt-8">
           <CardTitle className="text-2xl font-bold text-center">
             {isLogin ? 'Bem-vindo de volta' : 'Criar conta'}
