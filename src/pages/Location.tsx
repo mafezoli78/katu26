@@ -27,6 +27,19 @@ export default function Location() {
   const [step, setStep] = useState<'detecting' | 'select' | 'suggest' | 'intention'>('detecting');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  
+  // Demo location for testing - always visible
+  const DEMO_LOCATION = {
+    id: 'demo-test-location',
+    nome: '🧪 Local de Teste (DEMO)',
+    latitude: 0,
+    longitude: 0,
+    raio: 999999,
+    status_aprovacao: 'aprovado'
+  };
+  
+  // Combine real locations with demo
+  const allLocations = [DEMO_LOCATION, ...nearbyLocations];
   const [selectedIntentionId, setSelectedIntentionId] = useState<string | null>(null);
   const [newLocationName, setNewLocationName] = useState('');
   const [activating, setActivating] = useState(false);
@@ -145,20 +158,28 @@ export default function Location() {
                   <div className="text-center py-4">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                   </div>
-                ) : nearbyLocations.length === 0 ? (
+                ) : allLocations.length === 0 ? (
                   <p className="text-muted-foreground text-center py-4">
                     Nenhum local aprovado encontrado por perto
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {nearbyLocations.map((location) => (
+                    {allLocations.map((location) => (
                       <Button
                         key={location.id}
                         variant="outline"
-                        className="w-full justify-start h-auto py-3"
+                        className={`w-full justify-start h-auto py-3 touch-active ${
+                          location.id === 'demo-test-location' 
+                            ? 'border-dashed border-accent bg-accent/5' 
+                            : ''
+                        }`}
                         onClick={() => handleSelectLocation(location.id)}
                       >
-                        <MapPin className="h-5 w-5 mr-3 text-primary" />
+                        <MapPin className={`h-5 w-5 mr-3 ${
+                          location.id === 'demo-test-location' 
+                            ? 'text-accent' 
+                            : 'text-primary'
+                        }`} />
                         <span>{location.nome}</span>
                       </Button>
                     ))}
