@@ -75,7 +75,11 @@ export type Database = {
       }
       presence: {
         Row: {
+          assunto_atual: string | null
           ativo: boolean
+          disponivel: boolean
+          disponivel_desde: string | null
+          disponivel_expira_em: string | null
           id: string
           inicio: string
           intention_id: string
@@ -84,7 +88,11 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          assunto_atual?: string | null
           ativo?: boolean
+          disponivel?: boolean
+          disponivel_desde?: string | null
+          disponivel_expira_em?: string | null
           id?: string
           inicio?: string
           intention_id: string
@@ -93,7 +101,11 @@ export type Database = {
           user_id: string
         }
         Update: {
+          assunto_atual?: string | null
           ativo?: boolean
+          disponivel?: boolean
+          disponivel_desde?: string | null
+          disponivel_expira_em?: string | null
           id?: string
           inicio?: string
           intention_id?: string
