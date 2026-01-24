@@ -28,9 +28,12 @@ export default function Location() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   
+  // Demo location UUID - must match database record
+  const DEMO_LOCATION_ID = 'a0000000-0000-0000-0000-000000000001';
+  
   // Demo location for testing - always visible
   const DEMO_LOCATION = {
-    id: 'demo-test-location',
+    id: DEMO_LOCATION_ID,
     nome: '🧪 Local de Teste (DEMO)',
     latitude: 0,
     longitude: 0,
@@ -169,14 +172,14 @@ export default function Location() {
                         key={location.id}
                         variant="outline"
                         className={`w-full justify-start h-auto py-3 touch-active ${
-                          location.id === 'demo-test-location' 
+                          location.id === DEMO_LOCATION_ID 
                             ? 'border-dashed border-accent bg-accent/5' 
                             : ''
                         }`}
                         onClick={() => handleSelectLocation(location.id)}
                       >
                         <MapPin className={`h-5 w-5 mr-3 ${
-                          location.id === 'demo-test-location' 
+                          location.id === DEMO_LOCATION_ID 
                             ? 'text-accent' 
                             : 'text-primary'
                         }`} />
