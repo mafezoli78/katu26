@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { placesService, Place } from '@/services/placesService';
 
 export interface Intention {
   id: string;
@@ -33,9 +34,11 @@ export function usePresence() {
   const { user } = useAuth();
   const [intentions, setIntentions] = useState<Intention[]>([]);
   const [nearbyLocations, setNearbyLocations] = useState<Location[]>([]);
+  const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
   const [currentPresence, setCurrentPresence] = useState<Presence | null>(null);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [loading, setLoading] = useState(true);
+  const [placesLoading, setPlacesLoading] = useState(false);
   const [remainingTime, setRemainingTime] = useState<number>(0);
 
   const fetchIntentions = async () => {
@@ -48,8 +51,9 @@ export function usePresence() {
     }
   };
 
+  // Legacy: fetch from locations table (manual/demo locations)
   const fetchNearbyLocations = async (lat: number, lng: number) => {
-    // Get approved locations - in a real app, filter by distance
+    // Get approved locations from the locations table
     const { data, error } = await supabase
       .from('locations')
       .select('*')
@@ -62,6 +66,26 @@ export function usePresence() {
         return distance <= 5;
       });
       setNearbyLocations(nearby);
+    }
+  };
+
+  // NEW: fetch from Foursquare via edge function
+  const fetchNearbyPlaces = async (lat: number, lng: number) => {
+    setPlacesLoading(true);
+    try {
+      console.log(`[usePresence] 🔍 Fetching nearby places for lat=${lat}, lng=${lng}`);
+      const places = await placesService.searchNearby({
+        latitude: lat,
+        longitude: lng,
+        radius: 1000, // 1km radius
+      });
+      console.log(`[usePresence] ✅ Received ${places.length} places`);
+      setNearbyPlaces(places);
+    } catch (error) {
+      console.error('[usePresence] ❌ Error fetching places:', error);
+      setNearbyPlaces([]);
+    } finally {
+      setPlacesLoading(false);
     }
   };
 
@@ -225,12 +249,15 @@ export function usePresence() {
   return {
     intentions,
     nearbyLocations,
+    nearbyPlaces,
     currentPresence,
     currentLocation,
     loading,
+    placesLoading,
     remainingTime,
     formatRemainingTime,
     fetchNearbyLocations,
+    fetchNearbyPlaces,
     activatePresence,
     renewPresence,
     deactivatePresence,
