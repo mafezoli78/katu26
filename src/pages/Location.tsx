@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { MapPin, Plus, Navigation, Loader2, ArrowLeft } from 'lucide-react';
+import { MapPin, Plus, Navigation, Loader2, ArrowLeft, Coffee } from 'lucide-react';
 import logoKatu from '@/assets/logo-katu-branco.png';
+import { Place } from '@/services/placesService';
 
 export default function Location() {
   const { user } = useAuth();
@@ -18,15 +19,19 @@ export default function Location() {
   const { 
     intentions, 
     nearbyLocations, 
+    nearbyPlaces,
     fetchNearbyLocations, 
+    fetchNearbyPlaces,
     activatePresence, 
     suggestLocation,
-    loading 
+    loading,
+    placesLoading 
   } = usePresence();
 
   const [step, setStep] = useState<'detecting' | 'select' | 'suggest' | 'intention'>('detecting');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const [selectedLocationType, setSelectedLocationType] = useState<'location' | 'place'>('location');
   
   // Demo location UUID - must match database record
   const DEMO_LOCATION_ID = 'a0000000-0000-0000-0000-000000000001';
@@ -58,8 +63,13 @@ export default function Location() {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+          console.log(`[Location] 📍 Got user coordinates: lat=${coords.lat}, lng=${coords.lng}`);
           setUserCoords(coords);
+          
+          // Fetch both manual locations AND Foursquare places
           fetchNearbyLocations(coords.lat, coords.lng);
+          fetchNearbyPlaces(coords.lat, coords.lng);
+          
           setStep('select');
         },
         (error) => {
@@ -78,8 +88,9 @@ export default function Location() {
     }
   }, [user]);
 
-  const handleSelectLocation = (locationId: string) => {
+  const handleSelectLocation = (locationId: string, type: 'location' | 'place') => {
     setSelectedLocationId(locationId);
+    setSelectedLocationType(type);
     setStep('intention');
   };
 
@@ -106,6 +117,20 @@ export default function Location() {
     if (!selectedLocationId || !selectedIntentionId) return;
 
     setActivating(true);
+    
+    // For now, we only support activating presence for manual locations
+    // In the future, we can add support for places by creating a temporary location record
+    if (selectedLocationType === 'place') {
+      // TODO: Create a location record from the place and use that
+      toast({ 
+        variant: 'destructive', 
+        title: 'Funcionalidade em desenvolvimento',
+        description: 'Ativar presença em estabelecimentos do Foursquare ainda não está disponível'
+      });
+      setActivating(false);
+      return;
+    }
+    
     const { error } = await activatePresence(selectedLocationId, selectedIntentionId);
     setActivating(false);
 
@@ -152,53 +177,89 @@ export default function Location() {
                   <Navigation className="h-5 w-5" />
                   Locais próximos
                 </CardTitle>
-                <CardDescription>
-                  Selecione onde você está ou sugira um novo local
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <div className="text-center py-4">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                  </div>
-                ) : allLocations.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-4">
-                    Nenhum local aprovado encontrado por perto
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {allLocations.map((location) => (
-                      <Button
-                        key={location.id}
-                        variant="outline"
-                        className={`w-full justify-start h-auto py-3 touch-active ${
-                          location.id === DEMO_LOCATION_ID 
-                            ? 'border-dashed border-accent bg-accent/5' 
-                            : ''
-                        }`}
-                        onClick={() => handleSelectLocation(location.id)}
-                      >
-                        <MapPin className={`h-5 w-5 mr-3 ${
-                          location.id === DEMO_LOCATION_ID 
-                            ? 'text-accent' 
-                            : 'text-primary'
-                        }`} />
-                        <span>{location.nome}</span>
-                      </Button>
-                    ))}
-                  </div>
-                )}
+              <CardDescription>
+                Selecione onde você está ou sugira um novo local
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="text-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Manual/Demo Locations Section */}
+                  {allLocations.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground font-medium">Locais cadastrados</p>
+                      {allLocations.map((location) => (
+                        <Button
+                          key={location.id}
+                          variant="outline"
+                          className={`w-full justify-start h-auto py-3 touch-active ${
+                            location.id === DEMO_LOCATION_ID 
+                              ? 'border-dashed border-accent bg-accent/5' 
+                              : ''
+                          }`}
+                          onClick={() => handleSelectLocation(location.id, 'location')}
+                        >
+                          <MapPin className={`h-5 w-5 mr-3 ${
+                            location.id === DEMO_LOCATION_ID 
+                              ? 'text-accent' 
+                              : 'text-primary'
+                          }`} />
+                          <span>{location.nome}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  )}
 
-                <Button
-                  variant="ghost"
-                  className="w-full mt-4"
-                  onClick={() => setStep('suggest')}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Sugerir novo local
-                </Button>
-              </CardContent>
-            </Card>
+                  {/* Foursquare Places Section */}
+                  {placesLoading ? (
+                    <div className="text-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                      <p className="text-sm text-muted-foreground mt-2">Buscando locais próximos...</p>
+                    </div>
+                  ) : nearbyPlaces.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground font-medium">
+                        Estabelecimentos próximos ({nearbyPlaces.length})
+                      </p>
+                      {nearbyPlaces.slice(0, 10).map((place) => (
+                        <Button
+                          key={place.id}
+                          variant="outline"
+                          className="w-full justify-start h-auto py-3 touch-active"
+                          onClick={() => handleSelectLocation(place.id, 'place')}
+                        >
+                          <Coffee className="h-5 w-5 mr-3 text-muted-foreground" />
+                          <div className="flex flex-col items-start text-left">
+                            <span>{place.nome}</span>
+                            {place.categoria && (
+                              <span className="text-xs text-muted-foreground">{place.categoria}</span>
+                            )}
+                          </div>
+                        </Button>
+                      ))}
+                    </div>
+                  ) : userCoords ? (
+                    <p className="text-muted-foreground text-center py-4 text-sm">
+                      Nenhum estabelecimento encontrado por perto
+                    </p>
+                  ) : null}
+                </div>
+              )}
+
+              <Button
+                variant="ghost"
+                className="w-full mt-4"
+                onClick={() => setStep('suggest')}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Sugerir novo local
+              </Button>
+            </CardContent>
+          </Card>
           </>
         )}
 
