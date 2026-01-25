@@ -73,6 +73,63 @@ export type Database = {
           },
         ]
       }
+      places: {
+        Row: {
+          ativo: boolean
+          atualizado_em: string
+          categoria: string | null
+          cidade: string | null
+          criado_em: string
+          dados_brutos: Json | null
+          endereco: string | null
+          estado: string | null
+          id: string
+          latitude: number
+          longitude: number
+          nome: string
+          origem: string
+          pais: string | null
+          provider: string
+          provider_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          atualizado_em?: string
+          categoria?: string | null
+          cidade?: string | null
+          criado_em?: string
+          dados_brutos?: Json | null
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          latitude: number
+          longitude: number
+          nome: string
+          origem?: string
+          pais?: string | null
+          provider?: string
+          provider_id: string
+        }
+        Update: {
+          ativo?: boolean
+          atualizado_em?: string
+          categoria?: string | null
+          cidade?: string | null
+          criado_em?: string
+          dados_brutos?: Json | null
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          latitude?: number
+          longitude?: number
+          nome?: string
+          origem?: string
+          pais?: string | null
+          provider?: string
+          provider_id?: string
+        }
+        Relationships: []
+      }
       presence: {
         Row: {
           assunto_atual: string | null
