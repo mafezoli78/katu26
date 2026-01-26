@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      conversations: {
+        Row: {
+          ativo: boolean
+          criado_em: string
+          id: string
+          origem_wave_id: string | null
+          place_id: string
+          user1_id: string
+          user2_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          criado_em?: string
+          id?: string
+          origem_wave_id?: string | null
+          place_id: string
+          user1_id: string
+          user2_id: string
+        }
+        Update: {
+          ativo?: boolean
+          criado_em?: string
+          id?: string
+          origem_wave_id?: string | null
+          place_id?: string
+          user1_id?: string
+          user2_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_origem_wave_id_fkey"
+            columns: ["origem_wave_id"]
+            isOneToOne: false
+            referencedRelation: "waves"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_user1_id_fkey"
+            columns: ["user1_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_user2_id_fkey"
+            columns: ["user2_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       intentions: {
         Row: {
           descricao: string | null
@@ -255,30 +314,46 @@ export type Database = {
       }
       waves: {
         Row: {
+          accepted_by: string | null
           criado_em: string
           de_user_id: string
+          expires_at: string | null
           id: string
           location_id: string
           para_user_id: string
+          status: string
           visualizado: boolean
         }
         Insert: {
+          accepted_by?: string | null
           criado_em?: string
           de_user_id: string
+          expires_at?: string | null
           id?: string
           location_id: string
           para_user_id: string
+          status?: string
           visualizado?: boolean
         }
         Update: {
+          accepted_by?: string | null
           criado_em?: string
           de_user_id?: string
+          expires_at?: string | null
           id?: string
           location_id?: string
           para_user_id?: string
+          status?: string
           visualizado?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "waves_accepted_by_fkey"
+            columns: ["accepted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "waves_de_user_id_fkey"
             columns: ["de_user_id"]
