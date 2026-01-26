@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresence } from '@/hooks/usePresence';
@@ -10,7 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { MapPin, Clock, RefreshCw, LogOut, Hand, Sparkles } from 'lucide-react';
+import { MapPin, Clock, RefreshCw, LogOut, Hand, Sparkles, AlertCircle } from 'lucide-react';
 
 export default function Home() {
   const { user } = useAuth();
@@ -19,20 +19,42 @@ export default function Home() {
   const { 
     currentPresence, 
     currentLocation, 
-    remainingTime, 
     formatRemainingTime,
     renewPresence, 
     deactivatePresence,
+    lastEndReason,
+    clearLastEndReason,
+    presenceRadiusMeters,
     loading: presenceLoading 
   } = usePresence();
   const { people, loading: peopleLoading, refetch: refetchPeople } = usePeopleNearby(currentLocation?.id || null);
-  const { sendWave, hasWavedTo } = useWaves();
+  const { sendWave, hasWavedTo, refetch: refetchWaves } = useWaves();
 
   useEffect(() => {
     if (!user) {
       navigate('/auth', { replace: true });
     }
   }, [user, navigate]);
+
+  // Show toast when presence ends (by GPS exit or expiration)
+  useEffect(() => {
+    if (lastEndReason) {
+      const variant = lastEndReason.type === 'gps_exit' ? 'destructive' : 'default';
+      const icon = lastEndReason.type === 'gps_exit' ? '📍' : '⏰';
+      
+      toast({
+        variant,
+        title: `${icon} ${lastEndReason.message}`,
+        description: lastEndReason.type === 'gps_exit' 
+          ? 'Seus acenos foram encerrados automaticamente.'
+          : 'Selecione um novo local para continuar.',
+      });
+      
+      // Refetch waves since they were cleared
+      refetchWaves();
+      clearLastEndReason();
+    }
+  }, [lastEndReason, toast, clearLastEndReason, refetchWaves]);
 
   const handleWave = async (toUserId: string) => {
     if (!currentLocation) return;

@@ -1,7 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { placesService, Place } from '@/services/placesService';
+import {
+  PRESENCE_RADIUS_METERS,
+  SEARCH_RADIUS_METERS,
+  PRESENCE_DURATION_MS,
+  GPS_CHECK_INTERVAL_MS,
+  GPS_EXIT_THRESHOLD_COUNT,
+  calculateDistanceMeters,
+  isWithinRadius,
+  formatRemainingTime,
+} from '@/config/presence';
 
 export interface Intention {
   id: string;
@@ -28,7 +38,10 @@ export interface Presence {
   ativo: boolean;
 }
 
-const PRESENCE_DURATION_MS = 60 * 60 * 1000; // 1 hour
+export interface PresenceEndReason {
+  type: 'manual' | 'expired' | 'gps_exit';
+  message: string;
+}
 
 export function usePresence() {
   const { user } = useAuth();
@@ -40,6 +53,12 @@ export function usePresence() {
   const [loading, setLoading] = useState(true);
   const [placesLoading, setPlacesLoading] = useState(false);
   const [remainingTime, setRemainingTime] = useState<number>(0);
+  const [lastEndReason, setLastEndReason] = useState<PresenceEndReason | null>(null);
+
+  // Refs para GPS monitoring
+  const gpsWatchIdRef = useRef<number | null>(null);
+  const outsideRadiusCountRef = useRef(0);
+  const presenceLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const fetchIntentions = async () => {
     const { data, error } = await supabase
@@ -53,36 +72,35 @@ export function usePresence() {
 
   // Legacy: fetch from locations table (manual/demo locations)
   const fetchNearbyLocations = async (lat: number, lng: number) => {
-    // Get approved locations from the locations table
     const { data, error } = await supabase
       .from('locations')
       .select('*')
       .eq('status_aprovacao', 'aprovado');
 
     if (!error && data) {
-      // Simple distance filtering (within ~5km)
+      // Filter within search radius
       const nearby = data.filter(loc => {
-        const distance = getDistanceFromLatLonInKm(lat, lng, loc.latitude, loc.longitude);
-        return distance <= 5;
+        const distance = calculateDistanceMeters(lat, lng, loc.latitude, loc.longitude);
+        return distance <= SEARCH_RADIUS_METERS;
       });
       setNearbyLocations(nearby);
     }
   };
 
-  // NEW: fetch from Foursquare via edge function
+  // Fetch from Foursquare via edge function
   const fetchNearbyPlaces = async (lat: number, lng: number) => {
     setPlacesLoading(true);
     try {
-      console.log(`[usePresence] 🔍 Fetching nearby places for lat=${lat}, lng=${lng}`);
+      console.log(`[usePresence] 🔍 Buscando locais: lat=${lat}, lng=${lng}, raio=${SEARCH_RADIUS_METERS}m`);
       const places = await placesService.searchNearby({
         latitude: lat,
         longitude: lng,
-        radius: 1000, // 1km radius
+        radius: SEARCH_RADIUS_METERS,
       });
-      console.log(`[usePresence] ✅ Received ${places.length} places`);
+      console.log(`[usePresence] ✅ ${places.length} locais encontrados`);
       setNearbyPlaces(places);
     } catch (error) {
-      console.error('[usePresence] ❌ Error fetching places:', error);
+      console.error('[usePresence] ❌ Erro ao buscar locais:', error);
       setNearbyPlaces([]);
     } finally {
       setPlacesLoading(false);
@@ -101,15 +119,14 @@ export function usePresence() {
       .select('*')
       .eq('user_id', user.id)
       .eq('ativo', true)
-      .single();
+      .maybeSingle();
 
     if (!error && data) {
-      // Check if presence has expired
       const lastActivity = new Date(data.ultima_atividade).getTime();
       const now = Date.now();
-      
+
       if (now - lastActivity > PRESENCE_DURATION_MS) {
-        await deactivatePresence();
+        await endPresence('expired');
       } else {
         setCurrentPresence(data);
         setRemainingTime(PRESENCE_DURATION_MS - (now - lastActivity));
@@ -119,9 +136,17 @@ export function usePresence() {
           .from('locations')
           .select('*')
           .eq('id', data.location_id)
-          .single();
+          .maybeSingle();
 
-        if (locData) setCurrentLocation(locData);
+        if (locData) {
+          setCurrentLocation(locData);
+          presenceLocationRef.current = {
+            lat: locData.latitude,
+            lng: locData.longitude,
+          };
+          // Start GPS monitoring when presence is active
+          startGPSMonitoring();
+        }
       }
     } else {
       setCurrentPresence(null);
@@ -129,35 +154,115 @@ export function usePresence() {
     }
   };
 
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      await fetchIntentions();
-      await fetchCurrentPresence();
-      setLoading(false);
-    };
-    init();
-  }, [user]);
+  // ============= GPS Monitoring =============
+  
+  const checkGPSPosition = useCallback((position: GeolocationPosition) => {
+    if (!presenceLocationRef.current || !currentPresence) return;
 
-  // Timer countdown
-  useEffect(() => {
-    if (!currentPresence || remainingTime <= 0) return;
+    const { latitude, longitude, accuracy } = position.coords;
+    const { lat: locLat, lng: locLng } = presenceLocationRef.current;
 
-    const interval = setInterval(() => {
-      setRemainingTime(prev => {
-        if (prev <= 1000) {
-          deactivatePresence();
-          return 0;
-        }
-        return prev - 1000;
-      });
-    }, 1000);
+    // Ignore readings with poor accuracy
+    if (accuracy && accuracy > 100) {
+      console.log(`[GPS] Ignorando leitura com precisão ruim: ${accuracy}m`);
+      return;
+    }
 
-    return () => clearInterval(interval);
+    const distance = calculateDistanceMeters(latitude, longitude, locLat, locLng);
+    const isInside = distance <= PRESENCE_RADIUS_METERS;
+
+    console.log(`[GPS] Distância do local: ${Math.round(distance)}m (raio: ${PRESENCE_RADIUS_METERS}m) - ${isInside ? '✅ Dentro' : '⚠️ Fora'}`);
+
+    if (!isInside) {
+      outsideRadiusCountRef.current++;
+      console.log(`[GPS] Fora do raio (${outsideRadiusCountRef.current}/${GPS_EXIT_THRESHOLD_COUNT})`);
+
+      if (outsideRadiusCountRef.current >= GPS_EXIT_THRESHOLD_COUNT) {
+        console.log('[GPS] 🚪 Saída confirmada - encerrando presença');
+        endPresence('gps_exit');
+      }
+    } else {
+      // Reset counter when back inside
+      if (outsideRadiusCountRef.current > 0) {
+        console.log('[GPS] ✅ Voltou para dentro do raio');
+      }
+      outsideRadiusCountRef.current = 0;
+    }
   }, [currentPresence]);
+
+  const startGPSMonitoring = useCallback(() => {
+    if (!navigator.geolocation || gpsWatchIdRef.current !== null) return;
+
+    console.log('[GPS] 📍 Iniciando monitoramento de posição...');
+    outsideRadiusCountRef.current = 0;
+
+    gpsWatchIdRef.current = navigator.geolocation.watchPosition(
+      checkGPSPosition,
+      (error) => {
+        console.error('[GPS] Erro:', error.message);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: GPS_CHECK_INTERVAL_MS,
+        timeout: 15000,
+      }
+    );
+  }, [checkGPSPosition]);
+
+  const stopGPSMonitoring = useCallback(() => {
+    if (gpsWatchIdRef.current !== null) {
+      console.log('[GPS] 🛑 Parando monitoramento de posição');
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+      outsideRadiusCountRef.current = 0;
+    }
+  }, []);
+
+  // ============= Presence Actions =============
+
+  const endPresence = async (reason: 'manual' | 'expired' | 'gps_exit') => {
+    if (!user) return;
+
+    const messages = {
+      manual: 'Você saiu do local',
+      expired: 'Sua presença expirou',
+      gps_exit: 'Você saiu da área do local',
+    };
+
+    console.log(`[Presence] 🔚 Encerrando presença: ${reason}`);
+
+    // Stop GPS monitoring
+    stopGPSMonitoring();
+
+    // Delete user's waves at this location (they expire with presence)
+    if (currentLocation) {
+      await supabase
+        .from('waves')
+        .delete()
+        .eq('location_id', currentLocation.id)
+        .or(`de_user_id.eq.${user.id},para_user_id.eq.${user.id}`);
+      
+      console.log('[Presence] 🗑️ Acenos limpos');
+    }
+
+    // Delete presence
+    await supabase
+      .from('presence')
+      .delete()
+      .eq('user_id', user.id);
+
+    setCurrentPresence(null);
+    setCurrentLocation(null);
+    setRemainingTime(0);
+    presenceLocationRef.current = null;
+    setLastEndReason({ type: reason, message: messages[reason] });
+  };
 
   const activatePresence = async (locationId: string, intentionId: string) => {
     if (!user) return { error: new Error('Not authenticated') };
+
+    // Clear last end reason
+    setLastEndReason(null);
 
     // Deactivate any existing presence first
     await supabase
@@ -186,9 +291,17 @@ export function usePresence() {
         .from('locations')
         .select('*')
         .eq('id', locationId)
-        .single();
+        .maybeSingle();
 
-      if (locData) setCurrentLocation(locData);
+      if (locData) {
+        setCurrentLocation(locData);
+        presenceLocationRef.current = {
+          lat: locData.latitude,
+          lng: locData.longitude,
+        };
+        // Start GPS monitoring
+        startGPSMonitoring();
+      }
     }
 
     return { error };
@@ -211,16 +324,7 @@ export function usePresence() {
   };
 
   const deactivatePresence = async () => {
-    if (!user) return;
-
-    await supabase
-      .from('presence')
-      .delete()
-      .eq('user_id', user.id);
-
-    setCurrentPresence(null);
-    setCurrentLocation(null);
-    setRemainingTime(0);
+    await endPresence('manual');
   };
 
   const suggestLocation = async (nome: string, latitude: number, longitude: number) => {
@@ -232,7 +336,7 @@ export function usePresence() {
         nome,
         latitude,
         longitude,
-        raio: 100,
+        raio: PRESENCE_RADIUS_METERS,
         status_aprovacao: 'pendente',
         criado_por: user.id
       });
@@ -240,13 +344,45 @@ export function usePresence() {
     return { error };
   };
 
-  const formatRemainingTime = useCallback(() => {
-    const minutes = Math.floor(remainingTime / 60000);
-    const seconds = Math.floor((remainingTime % 60000) / 1000);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  // ============= Effects =============
+
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      await fetchIntentions();
+      await fetchCurrentPresence();
+      setLoading(false);
+    };
+    init();
+
+    return () => {
+      stopGPSMonitoring();
+    };
+  }, [user]);
+
+  // Timer countdown
+  useEffect(() => {
+    if (!currentPresence || remainingTime <= 0) return;
+
+    const interval = setInterval(() => {
+      setRemainingTime(prev => {
+        if (prev <= 1000) {
+          endPresence('expired');
+          return 0;
+        }
+        return prev - 1000;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentPresence]);
+
+  const getFormattedRemainingTime = useCallback(() => {
+    return formatRemainingTime(remainingTime);
   }, [remainingTime]);
 
   return {
+    // Data
     intentions,
     nearbyLocations,
     nearbyPlaces,
@@ -255,7 +391,14 @@ export function usePresence() {
     loading,
     placesLoading,
     remainingTime,
-    formatRemainingTime,
+    lastEndReason,
+    
+    // Config (exposed for UI)
+    presenceRadiusMeters: PRESENCE_RADIUS_METERS,
+    presenceDurationMs: PRESENCE_DURATION_MS,
+    
+    // Actions
+    formatRemainingTime: getFormattedRemainingTime,
     fetchNearbyLocations,
     fetchNearbyPlaces,
     activatePresence,
@@ -263,22 +406,6 @@ export function usePresence() {
     deactivatePresence,
     suggestLocation,
     refetch: fetchCurrentPresence,
+    clearLastEndReason: () => setLastEndReason(null),
   };
-}
-
-// Helper function to calculate distance between two coordinates
-function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // Radius of the earth in km
-  const dLat = deg2rad(lat2 - lat1);
-  const dLon = deg2rad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function deg2rad(deg: number) {
-  return deg * (Math.PI / 180);
 }
