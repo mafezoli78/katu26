@@ -5,26 +5,27 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Foursquare Places API response format (new endpoint)
+// Foursquare Places API response format (new endpoint - 2025 version)
+// lat/lng are at root level, not in geocodes.main
 interface FoursquarePlace {
   fsq_place_id: string;
   name: string;
-  geocodes: {
-    main: {
-      latitude: number;
-      longitude: number;
-    };
-  };
+  latitude: number;
+  longitude: number;
   location: {
     address?: string;
     locality?: string;
     region?: string;
     country?: string;
+    postcode?: string;
+    formatted_address?: string;
   };
   categories: Array<{
-    id: number;
+    fsq_category_id: string;
     name: string;
+    short_name?: string;
   }>;
+  distance?: number;
 }
 
 interface SearchParams {
@@ -115,8 +116,8 @@ Deno.serve(async (req) => {
           provider: "foursquare",
           provider_id: place.fsq_place_id,
           nome: place.name,
-          latitude: place.geocodes?.main?.latitude,
-          longitude: place.geocodes?.main?.longitude,
+          latitude: place.latitude,
+          longitude: place.longitude,
           endereco: place.location?.address || null,
           cidade: place.location?.locality || null,
           estado: place.location?.region || null,
