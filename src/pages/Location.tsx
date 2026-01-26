@@ -25,7 +25,8 @@ export default function Location() {
     activatePresence, 
     suggestLocation,
     loading,
-    placesLoading 
+    placesLoading,
+    presenceRadiusMeters,
   } = usePresence();
 
   const [step, setStep] = useState<'detecting' | 'select' | 'suggest' | 'intention'>('detecting');
@@ -177,9 +178,9 @@ export default function Location() {
                   <Navigation className="h-5 w-5" />
                   Locais próximos
                 </CardTitle>
-              <CardDescription>
-                Selecione onde você está ou sugira um novo local
-              </CardDescription>
+                <CardDescription>
+                  Selecione onde você está (raio: {presenceRadiusMeters}m)
+                </CardDescription>
             </CardHeader>
             <CardContent>
               {loading ? (

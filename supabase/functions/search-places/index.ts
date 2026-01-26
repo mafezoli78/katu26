@@ -52,7 +52,8 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { latitude, longitude, radius = 1000, query }: SearchParams = await req.json();
+    // Default radius matches SEARCH_RADIUS_METERS from frontend config
+    const { latitude, longitude, radius = 500, query }: SearchParams = await req.json();
 
     if (!latitude || !longitude) {
       return new Response(
