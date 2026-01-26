@@ -5,8 +5,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Support both old (fsq_id) and new (fsq_place_id) API response formats
 interface FoursquarePlace {
-  fsq_id: string;
+  fsq_id?: string;
+  fsq_place_id?: string;
   name: string;
   geocodes: {
     main: {
@@ -61,58 +63,84 @@ Deno.serve(async (req) => {
 
     console.log(`[search-places] 📍 Received coordinates: lat=${latitude}, lng=${longitude}, radius=${radius}m`);
 
-    // Build Foursquare API URL
-    const fsqUrl = new URL("https://api.foursquare.com/v3/places/search");
-    fsqUrl.searchParams.set("ll", `${latitude},${longitude}`);
-    fsqUrl.searchParams.set("radius", String(radius));
-    fsqUrl.searchParams.set("limit", "50");
-    
-    if (query) {
-      fsqUrl.searchParams.set("query", query);
-    }
-
     let places: FoursquarePlace[] = [];
     let foursquareSuccess = false;
 
-    try {
-      // Call Foursquare API
-      // Foursquare API v3 expects the API key in the Authorization header
-      // Format varies: some keys work with just the key, others need no prefix
-      console.log(`[search-places] 🔍 Calling Foursquare API...`);
-      const keyPrefix = FOURSQUARE_API_KEY.substring(0, 4);
-      console.log(`[search-places] 🔑 API Key prefix: ${keyPrefix}`);
-      
-      // If key doesn't start with 'fsq3', it might be a legacy key format
-      // Foursquare Places API v3 uses API keys directly in Authorization header
-      const authHeader = FOURSQUARE_API_KEY.startsWith('fsq') ? FOURSQUARE_API_KEY : FOURSQUARE_API_KEY;
-      
-      console.log(`[search-places] 📡 Request URL: ${fsqUrl.toString()}`);
-      
-      const fsqResponse = await fetch(fsqUrl.toString(), {
+    // Try new endpoint first, fallback to legacy endpoint
+    const endpoints: Array<{
+      name: string;
+      url: string;
+      headers: Record<string, string>;
+    }> = [
+      {
+        name: "new",
+        url: "https://places-api.foursquare.com/places/search",
         headers: {
-          "Authorization": authHeader,
+          "Authorization": `Bearer ${FOURSQUARE_API_KEY}`,
           "Accept": "application/json",
-        },
-      });
-
-      if (!fsqResponse.ok) {
-        const errorText = await fsqResponse.text();
-        console.error("[search-places] ❌ Foursquare API error:", fsqResponse.status, errorText);
-        throw new Error(`Foursquare API error: ${fsqResponse.status}`);
+          "X-Places-Api-Version": "2025-06-17",
+        }
+      },
+      {
+        name: "legacy",
+        url: "https://api.foursquare.com/v3/places/search",
+        headers: {
+          "Authorization": FOURSQUARE_API_KEY,
+          "Accept": "application/json",
+        }
       }
+    ];
 
-      const fsqData = await fsqResponse.json();
-      places = fsqData.results || [];
-      foursquareSuccess = true;
+    for (const endpoint of endpoints) {
+      try {
+        const fsqUrl = new URL(endpoint.url);
+        fsqUrl.searchParams.set("ll", `${latitude},${longitude}`);
+        fsqUrl.searchParams.set("radius", String(radius));
+        fsqUrl.searchParams.set("limit", "50");
+        
+        if (query) {
+          fsqUrl.searchParams.set("query", query);
+        }
 
-      console.log(`[search-places] ✅ Foursquare returned ${places.length} places`);
+        console.log(`[search-places] 🔍 Trying ${endpoint.name} endpoint: ${fsqUrl.toString()}`);
+        
+        const fsqResponse = await fetch(fsqUrl.toString(), {
+          headers: endpoint.headers,
+        });
 
+        if (!fsqResponse.ok) {
+          const errorText = await fsqResponse.text();
+          console.error(`[search-places] ❌ ${endpoint.name} endpoint error:`, fsqResponse.status, errorText);
+          continue; // Try next endpoint
+        }
+
+        const fsqData = await fsqResponse.json();
+        places = fsqData.results || [];
+        foursquareSuccess = true;
+
+        console.log(`[search-places] ✅ ${endpoint.name} endpoint returned ${places.length} places`);
+        break; // Success, stop trying endpoints
+
+      } catch (endpointError) {
+        console.error(`[search-places] ⚠️ ${endpoint.name} endpoint failed:`, endpointError);
+        continue;
+      }
+    }
+
+    if (foursquareSuccess && places.length > 0) {
       // Transform and upsert places into database
       let persistedCount = 0;
       const upsertPromises = places.map(async (place) => {
+        // Support both old and new ID field names
+        const placeId = place.fsq_place_id || place.fsq_id;
+        if (!placeId) {
+          console.warn(`[search-places] ⚠️ Place missing ID:`, place.name);
+          return null;
+        }
+
         const placeData = {
           provider: "foursquare",
-          provider_id: place.fsq_id,
+          provider_id: placeId,
           nome: place.name,
           latitude: place.geocodes?.main?.latitude,
           longitude: place.geocodes?.main?.longitude,
@@ -134,7 +162,7 @@ Deno.serve(async (req) => {
           });
 
         if (error) {
-          console.error(`[search-places] ⚠️ Error upserting place ${place.fsq_id}:`, error.message);
+          console.error(`[search-places] ⚠️ Error upserting place ${placeId}:`, error.message);
         } else {
           persistedCount++;
         }
@@ -144,10 +172,6 @@ Deno.serve(async (req) => {
 
       await Promise.all(upsertPromises);
       console.log(`[search-places] 💾 Persisted ${persistedCount}/${places.length} places to database`);
-
-    } catch (fsqError) {
-      console.error("[search-places] ⚠️ Foursquare fetch failed, falling back to cached data:", fsqError);
-      // Continue to return cached data
     }
 
     // Return places from database (ensures consistent data format)
