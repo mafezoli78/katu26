@@ -8,6 +8,7 @@ export interface Wave {
   de_user_id: string;
   para_user_id: string;
   location_id: string;
+  place_id: string | null;
   criado_em: string;
   visualizado: boolean;
   status: 'pending' | 'accepted';
@@ -92,17 +93,26 @@ export function useWaves() {
     fetchWaves();
   }, [fetchWaves]);
 
-  const sendWave = async (toUserId: string, locationId: string, placeId?: string) => {
+  /**
+   * Send a wave to another user at a specific place.
+   * REQUIRES: placeId (the user's current place)
+   */
+  const sendWave = async (toUserId: string, placeId: string) => {
     if (!user) return { error: new Error('Not authenticated') };
+
+    // CRITICAL: place_id is mandatory
+    if (!placeId) {
+      return { error: new Error('place_id é obrigatório para enviar aceno') };
+    }
 
     // Prevent sending wave to self
     if (toUserId === user.id) {
       return { error: new Error('Você não pode acenar para si mesmo') };
     }
 
-    // Check if wave already sent to this user at this location
+    // Check if wave already sent to this user at this place
     const existingWave = sentWaves.find(
-      w => w.para_user_id === toUserId && w.location_id === locationId
+      w => w.para_user_id === toUserId && (w.place_id === placeId || w.location_id === placeId)
     );
 
     if (existingWave) {
@@ -117,7 +127,8 @@ export function useWaves() {
       .insert({
         de_user_id: user.id,
         para_user_id: toUserId,
-        location_id: locationId,
+        location_id: placeId, // Keep for backwards compatibility
+        place_id: placeId,    // New source of truth
         expires_at: expiresAt,
         status: 'pending'
       })
@@ -132,66 +143,10 @@ export function useWaves() {
     return { error, data: data as Wave | null };
   };
 
-  const ensurePlaceExists = async (locationId: string): Promise<{ placeId: string | null; error: Error | null }> => {
-    // First, check if locationId exists directly in places table
-    const { data: existingPlace } = await supabase
-      .from('places')
-      .select('id')
-      .eq('id', locationId)
-      .maybeSingle();
-
-    if (existingPlace) {
-      return { placeId: existingPlace.id, error: null };
-    }
-
-    // If not in places, check if it's a location from the locations table
-    const { data: location } = await supabase
-      .from('locations')
-      .select('id, nome, latitude, longitude')
-      .eq('id', locationId)
-      .maybeSingle();
-
-    if (location) {
-      // Create a place entry from the location data
-      const { data: newPlace, error: createError } = await supabase
-        .from('places')
-        .insert({
-          provider: 'internal',
-          provider_id: `location_${location.id}`,
-          nome: location.nome,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          origem: 'location_conversion'
-        })
-        .select('id')
-        .single();
-
-      if (createError) {
-        // Check if it already exists (race condition)
-        if (createError.code === '23505') {
-          const { data: existingConverted } = await supabase
-            .from('places')
-            .select('id')
-            .eq('provider', 'internal')
-            .eq('provider_id', `location_${location.id}`)
-            .maybeSingle();
-          
-          if (existingConverted) {
-            return { placeId: existingConverted.id, error: null };
-          }
-        }
-        console.error('Error creating place from location:', createError);
-        return { placeId: null, error: new Error('Não foi possível criar o local') };
-      }
-
-      return { placeId: newPlace.id, error: null };
-    }
-
-    // Location not found anywhere
-    console.error('Location not found:', locationId);
-    return { placeId: null, error: new Error('Local não encontrado') };
-  };
-
+  /**
+   * Accept a wave and create a conversation.
+   * Validates that both users are at the same place.
+   */
   const acceptWave = async (waveId: string): Promise<{ error: Error | null; conversation: Conversation | null }> => {
     if (!user) return { error: new Error('Not authenticated'), conversation: null };
 
@@ -218,15 +173,27 @@ export function useWaves() {
       return { error: new Error('Este aceno já foi aceito'), conversation: null };
     }
 
+    // Get place_id - prefer the new field, fall back to location_id
+    const placeId = wave.place_id || wave.location_id;
+
+    if (!placeId) {
+      return { error: new Error('Este aceno não possui um local válido'), conversation: null };
+    }
+
     try {
-      // Step 1: Ensure place exists before creating conversation
-      const { placeId, error: placeError } = await ensurePlaceExists(wave.location_id);
-      
-      if (placeError || !placeId) {
-        return { error: placeError || new Error('Local não encontrado'), conversation: null };
+      // Step 1: Verify place exists
+      const { data: place, error: placeError } = await supabase
+        .from('places')
+        .select('id')
+        .eq('id', placeId)
+        .maybeSingle();
+
+      if (placeError || !place) {
+        console.error('[useWaves] Place not found:', placeId);
+        return { error: new Error('Local não encontrado'), conversation: null };
       }
 
-      // Step 2: Update wave status (optimistic)
+      // Step 2: Update wave status
       const { error: updateError } = await supabase
         .from('waves')
         .update({
@@ -343,8 +310,14 @@ export function useWaves() {
     setUnreadCount(0);
   };
 
-  const hasWavedTo = (userId: string, locationId: string) => {
-    return sentWaves.some(w => w.para_user_id === userId && w.location_id === locationId);
+  /**
+   * Check if user has already waved to another user at a specific place.
+   */
+  const hasWavedTo = (userId: string, placeId: string) => {
+    return sentWaves.some(w => 
+      w.para_user_id === userId && 
+      (w.place_id === placeId || w.location_id === placeId)
+    );
   };
 
   // Delete all waves for current user (called when presence ends)

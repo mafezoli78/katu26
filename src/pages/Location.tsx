@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { usePresence } from '@/hooks/usePresence';
+import { usePresence, NearbyTemporaryPlace } from '@/hooks/usePresence';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { MapPin, Plus, Navigation, Loader2, ArrowLeft, Coffee } from 'lucide-react';
+import { MapPin, Plus, Navigation, Loader2, ArrowLeft, Coffee, Users, Clock } from 'lucide-react';
 import logoKatu from '@/assets/logo-katu-branco.png';
 import { Place } from '@/services/placesService';
+import { Badge } from '@/components/ui/badge';
 
 export default function Location() {
   const { user } = useAuth();
@@ -18,40 +19,24 @@ export default function Location() {
   const { toast } = useToast();
   const { 
     intentions, 
-    nearbyLocations, 
     nearbyPlaces,
-    fetchNearbyLocations, 
+    nearbyTemporaryPlaces,
     fetchNearbyPlaces,
-    activatePresence, 
-    suggestLocation,
+    fetchNearbyTemporaryPlaces,
+    activatePresenceAtPlace,
+    createTemporaryPlace,
     loading,
     placesLoading,
     presenceRadiusMeters,
   } = usePresence();
 
-  const [step, setStep] = useState<'detecting' | 'select' | 'suggest' | 'intention'>('detecting');
+  const [step, setStep] = useState<'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'intention'>('detecting');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
-  const [selectedLocationType, setSelectedLocationType] = useState<'location' | 'place'>('location');
-  
-  // Demo location UUID - must match database record
-  const DEMO_LOCATION_ID = 'a0000000-0000-0000-0000-000000000001';
-  
-  // Demo location for testing - always visible
-  const DEMO_LOCATION = {
-    id: DEMO_LOCATION_ID,
-    nome: '🧪 Local de Teste (DEMO)',
-    latitude: 0,
-    longitude: 0,
-    raio: 999999,
-    status_aprovacao: 'aprovado'
-  };
-  
-  // Combine real locations with demo
-  const allLocations = [DEMO_LOCATION, ...nearbyLocations];
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [selectedIntentionId, setSelectedIntentionId] = useState<string | null>(null);
-  const [newLocationName, setNewLocationName] = useState('');
+  const [newPlaceName, setNewPlaceName] = useState('');
   const [activating, setActivating] = useState(false);
+  const [nearbyTempToConfirm, setNearbyTempToConfirm] = useState<NearbyTemporaryPlace | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -67,8 +52,7 @@ export default function Location() {
           console.log(`[Location] 📍 Got user coordinates: lat=${coords.lat}, lng=${coords.lng}`);
           setUserCoords(coords);
           
-          // Fetch both manual locations AND Foursquare places
-          fetchNearbyLocations(coords.lat, coords.lng);
+          // Fetch places (Foursquare + temporary places)
           fetchNearbyPlaces(coords.lat, coords.lng);
           
           setStep('select');
@@ -89,57 +73,79 @@ export default function Location() {
     }
   }, [user]);
 
-  const handleSelectLocation = (locationId: string, type: 'location' | 'place') => {
-    setSelectedLocationId(locationId);
-    setSelectedLocationType(type);
+  const handleSelectPlace = (placeId: string) => {
+    setSelectedPlaceId(placeId);
     setStep('intention');
   };
 
-  const handleSuggestLocation = async () => {
-    if (!newLocationName.trim() || !userCoords) {
+  const handleCreateTemporaryPlace = async () => {
+    if (!newPlaceName.trim() || !userCoords) {
       toast({ variant: 'destructive', title: 'Preencha o nome do local' });
       return;
     }
 
-    const { error } = await suggestLocation(newLocationName.trim(), userCoords.lat, userCoords.lng);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Erro ao sugerir local' });
-    } else {
-      toast({ 
-        title: 'Local sugerido!', 
-        description: 'Seu local será analisado e aprovado em breve' 
-      });
-      setNewLocationName('');
-      setStep('select');
+    // Check for nearby temporary places first
+    const nearbyTemp = await fetchNearbyTemporaryPlaces(userCoords.lat, userCoords.lng);
+    
+    if (nearbyTemp.length > 0) {
+      // Found nearby temporary place - ask user to confirm
+      setNearbyTempToConfirm(nearbyTemp[0]); // Show the closest one
+      setStep('confirm_temp');
+      return;
+    }
+
+    // No nearby temporary places, proceed to intention selection
+    setStep('intention');
+  };
+
+  const handleConfirmUseExistingTemp = () => {
+    if (nearbyTempToConfirm) {
+      setSelectedPlaceId(nearbyTempToConfirm.id);
+      setStep('intention');
     }
   };
 
+  const handleConfirmCreateNewTemp = () => {
+    // User wants to create new place even though one exists nearby
+    setNearbyTempToConfirm(null);
+    setStep('intention');
+  };
+
   const handleActivatePresence = async () => {
-    if (!selectedLocationId || !selectedIntentionId) return;
+    if (!selectedIntentionId) return;
 
     setActivating(true);
     
-    // For now, we only support activating presence for manual locations
-    // In the future, we can add support for places by creating a temporary location record
-    if (selectedLocationType === 'place') {
-      // TODO: Create a location record from the place and use that
-      toast({ 
-        variant: 'destructive', 
-        title: 'Funcionalidade em desenvolvimento',
-        description: 'Ativar presença em estabelecimentos do Foursquare ainda não está disponível'
-      });
-      setActivating(false);
-      return;
-    }
-    
-    const { error } = await activatePresence(selectedLocationId, selectedIntentionId);
-    setActivating(false);
+    try {
+      let error: Error | null = null;
 
-    if (error) {
-      toast({ variant: 'destructive', title: 'Erro ao ativar presença' });
-    } else {
-      toast({ title: 'Você está aqui! 📍' });
-      navigate('/home', { replace: true });
+      if (selectedPlaceId) {
+        // Activate presence at existing place (Foursquare or temporary)
+        const result = await activatePresenceAtPlace(selectedPlaceId, selectedIntentionId);
+        error = result.error;
+      } else if (newPlaceName.trim() && userCoords) {
+        // Create new temporary place and activate presence
+        const result = await createTemporaryPlace(
+          newPlaceName.trim(),
+          userCoords.lat,
+          userCoords.lng,
+          selectedIntentionId
+        );
+        error = result.error;
+      } else {
+        error = new Error('Nenhum local selecionado');
+      }
+
+      if (error) {
+        toast({ variant: 'destructive', title: 'Erro ao ativar presença', description: error.message });
+      } else {
+        toast({ title: 'Você está aqui! 📍' });
+        navigate('/home', { replace: true });
+      }
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Erro inesperado' });
+    } finally {
+      setActivating(false);
     }
   };
 
@@ -181,106 +187,110 @@ export default function Location() {
                 <CardDescription>
                   Selecione onde você está (raio: {presenceRadiusMeters}m)
                 </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="text-center py-4">
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Manual/Demo Locations Section */}
-                  {allLocations.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground font-medium">Locais cadastrados</p>
-                      {allLocations.map((location) => (
-                        <Button
-                          key={location.id}
-                          variant="outline"
-                          className={`w-full justify-start h-auto py-3 touch-active ${
-                            location.id === DEMO_LOCATION_ID 
-                              ? 'border-dashed border-accent bg-accent/5' 
-                              : ''
-                          }`}
-                          onClick={() => handleSelectLocation(location.id, 'location')}
-                        >
-                          <MapPin className={`h-5 w-5 mr-3 ${
-                            location.id === DEMO_LOCATION_ID 
-                              ? 'text-accent' 
-                              : 'text-primary'
-                          }`} />
-                          <span>{location.nome}</span>
-                        </Button>
-                      ))}
-                    </div>
-                  )}
+              </CardHeader>
+              <CardContent>
+                {loading || placesLoading ? (
+                  <div className="text-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                    <p className="text-sm text-muted-foreground mt-2">Buscando locais próximos...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Temporary Places Section (prioritized) */}
+                    {nearbyTemporaryPlaces.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
+                          <Clock className="h-4 w-4" />
+                          Locais temporários ativos
+                        </p>
+                        {nearbyTemporaryPlaces.map((place) => (
+                          <Button
+                            key={place.id}
+                            variant="outline"
+                            className="w-full justify-start h-auto py-3 touch-active border-accent bg-accent/5"
+                            onClick={() => handleSelectPlace(place.id)}
+                          >
+                            <MapPin className="h-5 w-5 mr-3 text-accent" />
+                            <div className="flex flex-col items-start text-left flex-1">
+                              <span>{place.nome}</span>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant="secondary" className="text-xs">
+                                  <Users className="h-3 w-3 mr-1" />
+                                  {place.active_users} {place.active_users === 1 ? 'pessoa' : 'pessoas'}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {Math.round(place.distance_meters)}m
+                                </span>
+                              </div>
+                            </div>
+                          </Button>
+                        ))}
+                      </div>
+                    )}
 
-                  {/* Foursquare Places Section */}
-                  {placesLoading ? (
-                    <div className="text-center py-4">
-                      <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                      <p className="text-sm text-muted-foreground mt-2">Buscando locais próximos...</p>
-                    </div>
-                  ) : nearbyPlaces.length > 0 ? (
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground font-medium">
-                        Estabelecimentos próximos ({nearbyPlaces.length})
+                    {/* Foursquare Places Section */}
+                    {nearbyPlaces.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground font-medium">
+                          Estabelecimentos próximos ({nearbyPlaces.length})
+                        </p>
+                        {nearbyPlaces.slice(0, 10).map((place) => (
+                          <Button
+                            key={place.id}
+                            variant="outline"
+                            className="w-full justify-start h-auto py-3 touch-active"
+                            onClick={() => handleSelectPlace(place.id)}
+                          >
+                            <Coffee className="h-5 w-5 mr-3 text-muted-foreground" />
+                            <div className="flex flex-col items-start text-left">
+                              <span>{place.nome}</span>
+                              {place.categoria && (
+                                <span className="text-xs text-muted-foreground">{place.categoria}</span>
+                              )}
+                            </div>
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+
+                    {nearbyPlaces.length === 0 && nearbyTemporaryPlaces.length === 0 && userCoords && (
+                      <p className="text-muted-foreground text-center py-4 text-sm">
+                        Nenhum local encontrado por perto
                       </p>
-                      {nearbyPlaces.slice(0, 10).map((place) => (
-                        <Button
-                          key={place.id}
-                          variant="outline"
-                          className="w-full justify-start h-auto py-3 touch-active"
-                          onClick={() => handleSelectLocation(place.id, 'place')}
-                        >
-                          <Coffee className="h-5 w-5 mr-3 text-muted-foreground" />
-                          <div className="flex flex-col items-start text-left">
-                            <span>{place.nome}</span>
-                            {place.categoria && (
-                              <span className="text-xs text-muted-foreground">{place.categoria}</span>
-                            )}
-                          </div>
-                        </Button>
-                      ))}
-                    </div>
-                  ) : userCoords ? (
-                    <p className="text-muted-foreground text-center py-4 text-sm">
-                      Nenhum estabelecimento encontrado por perto
-                    </p>
-                  ) : null}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
 
-              <Button
-                variant="ghost"
-                className="w-full mt-4"
-                onClick={() => setStep('suggest')}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Sugerir novo local
-              </Button>
-            </CardContent>
-          </Card>
+                <Button
+                  variant="ghost"
+                  className="w-full mt-4"
+                  onClick={() => setStep('create_temp')}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Criar local temporário
+                </Button>
+              </CardContent>
+            </Card>
           </>
         )}
 
-        {/* Suggest new location */}
-        {step === 'suggest' && (
+        {/* Create temporary place */}
+        {step === 'create_temp' && (
           <Card>
             <CardHeader>
-              <CardTitle>Sugerir local</CardTitle>
+              <CardTitle>Criar local temporário</CardTitle>
               <CardDescription>
-                O local será analisado antes de ser aprovado
+                Crie um local para encontros espontâneos. Expira após 6 horas.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="locationName">Nome do local</Label>
+                <Label htmlFor="placeName">Nome do local</Label>
                 <Input
-                  id="locationName"
-                  placeholder="Ex: Café Central, Praça da Liberdade..."
-                  value={newLocationName}
-                  onChange={(e) => setNewLocationName(e.target.value)}
+                  id="placeName"
+                  placeholder="Ex: Festa do João, Churrasco no parque..."
+                  value={newPlaceName}
+                  onChange={(e) => setNewPlaceName(e.target.value)}
                 />
               </div>
               <div className="flex gap-2">
@@ -288,10 +298,58 @@ export default function Location() {
                   Voltar
                 </Button>
                 <Button 
-                  onClick={handleSuggestLocation} 
+                  onClick={handleCreateTemporaryPlace}
+                  disabled={!newPlaceName.trim()}
                   className="flex-1 bg-accent text-accent-foreground"
                 >
-                  Enviar sugestão
+                  Continuar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Confirm use of existing temporary place */}
+        {step === 'confirm_temp' && nearbyTempToConfirm && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Local temporário próximo</CardTitle>
+              <CardDescription>
+                Já existe um local temporário muito próximo. Deseja entrar nele?
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-4 bg-accent/10 rounded-lg border border-accent/30">
+                <p className="font-medium">{nearbyTempToConfirm.nome}</p>
+                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  <span>{nearbyTempToConfirm.active_users} {nearbyTempToConfirm.active_users === 1 ? 'pessoa' : 'pessoas'}</span>
+                  <span>•</span>
+                  <span>{Math.round(nearbyTempToConfirm.distance_meters)}m de você</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button 
+                  onClick={handleConfirmUseExistingTemp}
+                  className="bg-accent text-accent-foreground"
+                >
+                  Entrar neste local
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={handleConfirmCreateNewTemp}
+                >
+                  Criar outro local mesmo assim
+                </Button>
+                <Button 
+                  variant="ghost"
+                  onClick={() => {
+                    setNearbyTempToConfirm(null);
+                    setStep('select');
+                  }}
+                >
+                  Voltar
                 </Button>
               </div>
             </CardContent>
@@ -326,7 +384,19 @@ export default function Location() {
               </RadioGroup>
 
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep('select')} className="flex-1">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    if (nearbyTempToConfirm) {
+                      setStep('confirm_temp');
+                    } else if (newPlaceName.trim()) {
+                      setStep('create_temp');
+                    } else {
+                      setStep('select');
+                    }
+                  }} 
+                  className="flex-1"
+                >
                   Voltar
                 </Button>
                 <Button 

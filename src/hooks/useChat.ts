@@ -70,6 +70,12 @@ export function useChat() {
   }, [user, conversations, chatState.conversation?.id, refetchConversations]);
 
   const openChat = useCallback((conversation: ConversationWithDetails) => {
+    // Validate that conversation has a valid place_id
+    if (!conversation.place_id) {
+      console.error('[useChat] Cannot open chat: conversation has no place_id');
+      return;
+    }
+    
     setChatState({
       isActive: true,
       conversation,
@@ -129,17 +135,24 @@ export function useChat() {
   }, [chatState.conversation, user, refetchConversations]);
 
   // Called when presence ends (from usePresence)
-  const endAllChatsForPresence = useCallback(async () => {
+  const endAllChatsForPresence = useCallback(async (placeId?: string) => {
     if (!user) return;
 
-    console.log('[useChat] Ending all chats due to presence end');
+    console.log('[useChat] Ending all chats due to presence end', placeId ? `at place ${placeId}` : '');
 
-    // Get all active conversations
-    const { data: activeConversations } = await supabase
+    // Build query for active conversations
+    let query = supabase
       .from('conversations')
       .select('id')
       .eq('ativo', true)
       .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
+    // Filter by place_id if provided
+    if (placeId) {
+      query = query.eq('place_id', placeId);
+    }
+
+    const { data: activeConversations } = await query;
 
     if (activeConversations && activeConversations.length > 0) {
       for (const conv of activeConversations) {
@@ -154,7 +167,7 @@ export function useChat() {
           })
           .eq('id', conv.id);
 
-        // Delete messages
+        // Delete messages (ephemeral)
         await supabase
           .from('messages')
           .delete()
