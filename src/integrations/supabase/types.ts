@@ -467,6 +467,7 @@ export type Database = {
         }[]
       }
       get_user_active_location_id: { Args: never; Returns: string }
+      get_user_active_place_id: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never
