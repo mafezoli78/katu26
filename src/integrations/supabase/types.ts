@@ -193,11 +193,14 @@ export type Database = {
           atualizado_em: string
           categoria: string | null
           cidade: string | null
+          created_by: string | null
           criado_em: string
           dados_brutos: Json | null
           endereco: string | null
           estado: string | null
+          expires_at: string | null
           id: string
+          is_temporary: boolean
           latitude: number
           longitude: number
           nome: string
@@ -211,11 +214,14 @@ export type Database = {
           atualizado_em?: string
           categoria?: string | null
           cidade?: string | null
+          created_by?: string | null
           criado_em?: string
           dados_brutos?: Json | null
           endereco?: string | null
           estado?: string | null
+          expires_at?: string | null
           id?: string
+          is_temporary?: boolean
           latitude: number
           longitude: number
           nome: string
@@ -229,11 +235,14 @@ export type Database = {
           atualizado_em?: string
           categoria?: string | null
           cidade?: string | null
+          created_by?: string | null
           criado_em?: string
           dados_brutos?: Json | null
           endereco?: string | null
           estado?: string | null
+          expires_at?: string | null
           id?: string
+          is_temporary?: boolean
           latitude?: number
           longitude?: number
           nome?: string
@@ -242,7 +251,15 @@ export type Database = {
           provider?: string
           provider_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "places_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       presence: {
         Row: {
