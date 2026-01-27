@@ -271,7 +271,7 @@ export type Database = {
           id: string
           inicio: string
           intention_id: string
-          location_id: string
+          location_id: string | null
           place_id: string | null
           ultima_atividade: string
           user_id: string
@@ -285,7 +285,7 @@ export type Database = {
           id?: string
           inicio?: string
           intention_id: string
-          location_id: string
+          location_id?: string | null
           place_id?: string | null
           ultima_atividade?: string
           user_id: string
@@ -299,7 +299,7 @@ export type Database = {
           id?: string
           inicio?: string
           intention_id?: string
-          location_id?: string
+          location_id?: string | null
           place_id?: string | null
           ultima_atividade?: string
           user_id?: string
@@ -310,13 +310,6 @@ export type Database = {
             columns: ["intention_id"]
             isOneToOne: false
             referencedRelation: "intentions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "presence_location_id_fkey"
-            columns: ["location_id"]
-            isOneToOne: false
-            referencedRelation: "locations"
             referencedColumns: ["id"]
           },
           {

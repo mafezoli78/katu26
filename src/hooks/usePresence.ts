@@ -320,7 +320,6 @@ export function usePresence() {
       .from('presence')
       .insert({
         user_id: user.id,
-        location_id: placeId, // Legacy - será removido futuramente
         place_id: placeId,    // Fonte única de verdade
         intention_id: intentionId,
         inicio: new Date().toISOString(),
