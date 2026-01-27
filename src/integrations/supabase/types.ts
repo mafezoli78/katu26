@@ -396,6 +396,7 @@ export type Database = {
           id: string
           location_id: string
           para_user_id: string
+          place_id: string | null
           status: string
           visualizado: boolean
         }
@@ -407,6 +408,7 @@ export type Database = {
           id?: string
           location_id: string
           para_user_id: string
+          place_id?: string | null
           status?: string
           visualizado?: boolean
         }
@@ -418,6 +420,7 @@ export type Database = {
           id?: string
           location_id?: string
           para_user_id?: string
+          place_id?: string | null
           status?: string
           visualizado?: boolean
         }
@@ -448,6 +451,13 @@ export type Database = {
             columns: ["para_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waves_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
             referencedColumns: ["id"]
           },
         ]
