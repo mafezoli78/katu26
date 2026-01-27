@@ -132,6 +132,66 @@ export function useWaves() {
     return { error, data: data as Wave | null };
   };
 
+  const ensurePlaceExists = async (locationId: string): Promise<{ placeId: string | null; error: Error | null }> => {
+    // First, check if locationId exists directly in places table
+    const { data: existingPlace } = await supabase
+      .from('places')
+      .select('id')
+      .eq('id', locationId)
+      .maybeSingle();
+
+    if (existingPlace) {
+      return { placeId: existingPlace.id, error: null };
+    }
+
+    // If not in places, check if it's a location from the locations table
+    const { data: location } = await supabase
+      .from('locations')
+      .select('id, nome, latitude, longitude')
+      .eq('id', locationId)
+      .maybeSingle();
+
+    if (location) {
+      // Create a place entry from the location data
+      const { data: newPlace, error: createError } = await supabase
+        .from('places')
+        .insert({
+          provider: 'internal',
+          provider_id: `location_${location.id}`,
+          nome: location.nome,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          origem: 'location_conversion'
+        })
+        .select('id')
+        .single();
+
+      if (createError) {
+        // Check if it already exists (race condition)
+        if (createError.code === '23505') {
+          const { data: existingConverted } = await supabase
+            .from('places')
+            .select('id')
+            .eq('provider', 'internal')
+            .eq('provider_id', `location_${location.id}`)
+            .maybeSingle();
+          
+          if (existingConverted) {
+            return { placeId: existingConverted.id, error: null };
+          }
+        }
+        console.error('Error creating place from location:', createError);
+        return { placeId: null, error: new Error('Não foi possível criar o local') };
+      }
+
+      return { placeId: newPlace.id, error: null };
+    }
+
+    // Location not found anywhere
+    console.error('Location not found:', locationId);
+    return { placeId: null, error: new Error('Local não encontrado') };
+  };
+
   const acceptWave = async (waveId: string): Promise<{ error: Error | null; conversation: Conversation | null }> => {
     if (!user) return { error: new Error('Not authenticated'), conversation: null };
 
@@ -159,7 +219,14 @@ export function useWaves() {
     }
 
     try {
-      // Step 1: Update wave status (optimistic)
+      // Step 1: Ensure place exists before creating conversation
+      const { placeId, error: placeError } = await ensurePlaceExists(wave.location_id);
+      
+      if (placeError || !placeId) {
+        return { error: placeError || new Error('Local não encontrado'), conversation: null };
+      }
+
+      // Step 2: Update wave status (optimistic)
       const { error: updateError } = await supabase
         .from('waves')
         .update({
@@ -179,14 +246,13 @@ export function useWaves() {
         throw updateError;
       }
 
-      // Step 2: Create conversation
-      // user1_id = wave creator, user2_id = acceptor
+      // Step 3: Create conversation with validated place_id
       const { data: conversationData, error: conversationError } = await supabase
         .from('conversations')
         .insert({
           user1_id: wave.de_user_id,
           user2_id: user.id,
-          place_id: wave.location_id, // Using location_id which maps to place
+          place_id: placeId,
           origem_wave_id: waveId
         })
         .select()
@@ -201,7 +267,7 @@ export function useWaves() {
             .select('*')
             .eq('ativo', true)
             .or(`and(user1_id.eq.${wave.de_user_id},user2_id.eq.${user.id}),and(user1_id.eq.${user.id},user2_id.eq.${wave.de_user_id})`)
-            .eq('place_id', wave.location_id)
+            .eq('place_id', placeId)
             .maybeSingle();
 
           if (existingConversation) {
@@ -223,7 +289,7 @@ export function useWaves() {
         throw conversationError;
       }
 
-      // Step 3: Update local state
+      // Step 4: Update local state
       setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
       setUnreadCount(prev => Math.max(0, prev - 1));
 
