@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChat } from '@/hooks/useChat';
 import { MobileLayout } from '@/components/layout/MobileLayout';
@@ -11,6 +11,9 @@ import { MessageCircle } from 'lucide-react';
 export default function Chat() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const conversationIdParam = searchParams.get('conversationId');
+  
   const {
     chatState,
     activeConversations,
@@ -25,6 +28,21 @@ export default function Chat() {
       navigate('/auth', { replace: true });
     }
   }, [user, navigate]);
+
+  // Auto-open conversation from query param
+  useEffect(() => {
+    if (!conversationIdParam || chatState.isActive) return;
+    
+    const targetConversation = activeConversations.find(
+      c => c.id === conversationIdParam
+    );
+    
+    if (targetConversation) {
+      openChat(targetConversation);
+      // Clear query param to prevent re-triggering
+      setSearchParams({}, { replace: true });
+    }
+  }, [conversationIdParam, activeConversations, chatState.isActive, openChat, setSearchParams]);
 
   // Show toast when chat ends
   useEffect(() => {
