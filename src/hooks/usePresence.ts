@@ -234,6 +234,36 @@ export function usePresence() {
     // Stop GPS monitoring
     stopGPSMonitoring();
 
+    // End all active conversations due to presence end
+    const { data: activeConversations } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('ativo', true)
+      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
+    if (activeConversations && activeConversations.length > 0) {
+      console.log(`[Presence] 🔚 Encerrando ${activeConversations.length} conversa(s)`);
+      
+      for (const conv of activeConversations) {
+        // Update conversation with end info
+        await supabase
+          .from('conversations')
+          .update({
+            ativo: false,
+            encerrado_por: user.id,
+            encerrado_em: new Date().toISOString(),
+            encerrado_motivo: 'presence_end',
+          })
+          .eq('id', conv.id);
+
+        // Delete messages (ephemeral)
+        await supabase
+          .from('messages')
+          .delete()
+          .eq('conversation_id', conv.id);
+      }
+    }
+
     // Delete user's waves at this location (they expire with presence)
     if (currentLocation) {
       await supabase

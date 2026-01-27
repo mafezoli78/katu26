@@ -18,6 +18,9 @@ export type Database = {
         Row: {
           ativo: boolean
           criado_em: string
+          encerrado_em: string | null
+          encerrado_motivo: string | null
+          encerrado_por: string | null
           id: string
           origem_wave_id: string | null
           place_id: string
@@ -27,6 +30,9 @@ export type Database = {
         Insert: {
           ativo?: boolean
           criado_em?: string
+          encerrado_em?: string | null
+          encerrado_motivo?: string | null
+          encerrado_por?: string | null
           id?: string
           origem_wave_id?: string | null
           place_id: string
@@ -36,6 +42,9 @@ export type Database = {
         Update: {
           ativo?: boolean
           criado_em?: string
+          encerrado_em?: string | null
+          encerrado_motivo?: string | null
+          encerrado_por?: string | null
           id?: string
           origem_wave_id?: string | null
           place_id?: string
@@ -43,6 +52,13 @@ export type Database = {
           user2_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "conversations_encerrado_por_fkey"
+            columns: ["encerrado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "conversations_origem_wave_id_fkey"
             columns: ["origem_wave_id"]
@@ -126,6 +142,45 @@ export type Database = {
           {
             foreignKeyName: "locations_criado_por_fkey"
             columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          conteudo: string
+          conversation_id: string
+          criado_em: string
+          id: string
+          sender_id: string
+        }
+        Insert: {
+          conteudo: string
+          conversation_id: string
+          criado_em?: string
+          id?: string
+          sender_id: string
+        }
+        Update: {
+          conteudo?: string
+          conversation_id?: string
+          criado_em?: string
+          id?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
