@@ -13,6 +13,7 @@ import { Hand, Eye, Check, X, MessageCircle, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
+import { ToastAction } from '@/components/ui/toast';
 
 interface WaveWithProfile {
   id: string;
@@ -158,7 +159,16 @@ export default function Waves() {
       
       toast({
         title: 'Conexão criada! 🎉',
-        description: `Você agora pode conversar com ${wave.profile.nome || 'esta pessoa'}`
+        description: `Você agora pode conversar com ${wave.profile.nome || 'esta pessoa'}`,
+        action: (
+          <ToastAction 
+            altText="Abrir conversa"
+            onClick={() => navigate(`/chat?conversationId=${conversation.id}`)}
+          >
+            <MessageCircle className="h-4 w-4 mr-1" />
+            Abrir chat
+          </ToastAction>
+        )
       });
     }
     
