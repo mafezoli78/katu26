@@ -10,6 +10,7 @@ import Onboarding from "./pages/Onboarding";
 import Home from "./pages/Home";
 import Profile from "./pages/Profile";
 import Waves from "./pages/Waves";
+import Chat from "./pages/Chat";
 import Location from "./pages/Location";
 import NotFound from "./pages/NotFound";
 
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/home" element={<Home />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/waves" element={<Waves />} />
+            <Route path="/chat" element={<Chat />} />
             <Route path="/location" element={<Location />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

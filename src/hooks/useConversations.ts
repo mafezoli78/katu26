@@ -10,6 +10,9 @@ export interface Conversation {
   origem_wave_id: string | null;
   criado_em: string;
   ativo: boolean;
+  encerrado_por: string | null;
+  encerrado_em: string | null;
+  encerrado_motivo: 'manual' | 'presence_end' | null;
 }
 
 export interface ConversationWithDetails extends Conversation {

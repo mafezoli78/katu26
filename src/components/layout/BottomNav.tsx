@@ -1,17 +1,20 @@
-import { Home, User, Hand } from 'lucide-react';
+import { Home, User, Hand, MessageCircle } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useWaves } from '@/hooks/useWaves';
+import { useConversations } from '@/hooks/useConversations';
 
 export function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { unreadCount } = useWaves();
+  const { conversations } = useConversations();
 
   const navItems = [
     { icon: Home, label: 'Home', path: '/home' },
-    { icon: User, label: 'Perfil', path: '/profile' },
+    { icon: MessageCircle, label: 'Chat', path: '/chat', badge: conversations.length > 0 ? conversations.length : undefined },
     { icon: Hand, label: 'Acenos', path: '/waves', badge: unreadCount },
+    { icon: User, label: 'Perfil', path: '/profile' },
   ];
 
   return (
