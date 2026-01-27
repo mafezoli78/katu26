@@ -21,8 +21,8 @@ export interface Intention {
 export interface Presence {
   id: string;
   user_id: string;
-  location_id: string;
-  place_id: string | null;
+  location_id: string; // Legacy - manter para compatibilidade
+  place_id: string;    // Fonte única de verdade
   intention_id: string;
   inicio: string;
   ultima_atividade: string;
@@ -150,8 +150,8 @@ export function usePresence() {
         setCurrentPresence(data);
         setRemainingTime(PRESENCE_DURATION_MS - (now - lastActivity));
 
-        // Fetch the place details using place_id
-        const placeId = data.place_id || data.location_id;
+        // Fetch the place details using place_id (source of truth)
+        const placeId = data.place_id;
         if (placeId) {
           const { data: placeData } = await supabase
             .from('places')
@@ -315,13 +315,13 @@ export function usePresence() {
       .delete()
       .eq('user_id', user.id);
 
-    // Create new presence with place_id
+    // Create new presence with place_id as source of truth
     const { data, error } = await supabase
       .from('presence')
       .insert({
         user_id: user.id,
-        location_id: placeId, // Keep for backwards compatibility
-        place_id: placeId,    // New source of truth
+        location_id: placeId, // Legacy - será removido futuramente
+        place_id: placeId,    // Fonte única de verdade
         intention_id: intentionId,
         inicio: new Date().toISOString(),
         ultima_atividade: new Date().toISOString(),

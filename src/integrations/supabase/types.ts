@@ -272,6 +272,7 @@ export type Database = {
           inicio: string
           intention_id: string
           location_id: string
+          place_id: string | null
           ultima_atividade: string
           user_id: string
         }
@@ -285,6 +286,7 @@ export type Database = {
           inicio?: string
           intention_id: string
           location_id: string
+          place_id?: string | null
           ultima_atividade?: string
           user_id: string
         }
@@ -298,6 +300,7 @@ export type Database = {
           inicio?: string
           intention_id?: string
           location_id?: string
+          place_id?: string | null
           ultima_atividade?: string
           user_id?: string
         }
@@ -314,6 +317,13 @@ export type Database = {
             columns: ["location_id"]
             isOneToOne: false
             referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presence_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
             referencedColumns: ["id"]
           },
           {
@@ -454,6 +464,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      find_nearby_temporary_places: {
+        Args: { radius_meters?: number; user_lat: number; user_lng: number }
+        Returns: {
+          active_users: number
+          distance_meters: number
+          id: string
+          nome: string
+        }[]
+      }
       get_user_active_location_id: { Args: never; Returns: string }
     }
     Enums: {
