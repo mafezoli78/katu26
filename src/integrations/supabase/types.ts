@@ -394,7 +394,7 @@ export type Database = {
           de_user_id: string
           expires_at: string | null
           id: string
-          location_id: string
+          location_id: string | null
           para_user_id: string
           place_id: string | null
           status: string
@@ -406,7 +406,7 @@ export type Database = {
           de_user_id: string
           expires_at?: string | null
           id?: string
-          location_id: string
+          location_id?: string | null
           para_user_id: string
           place_id?: string | null
           status?: string
@@ -418,7 +418,7 @@ export type Database = {
           de_user_id?: string
           expires_at?: string | null
           id?: string
-          location_id?: string
+          location_id?: string | null
           para_user_id?: string
           place_id?: string | null
           status?: string
@@ -437,13 +437,6 @@ export type Database = {
             columns: ["de_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "waves_location_id_fkey"
-            columns: ["location_id"]
-            isOneToOne: false
-            referencedRelation: "locations"
             referencedColumns: ["id"]
           },
           {
