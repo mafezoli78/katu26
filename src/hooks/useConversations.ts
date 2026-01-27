@@ -55,6 +55,14 @@ export function useConversations() {
       for (const conv of data || []) {
         const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
         
+        // Get place_id - MUST exist for valid conversations
+        const placeId = conv.place_id;
+        
+        if (!placeId) {
+          console.warn(`[useConversations] Conversation ${conv.id} has no place_id, skipping`);
+          continue;
+        }
+        
         const [profileRes, placeRes] = await Promise.all([
           supabase
             .from('profiles')
@@ -64,7 +72,7 @@ export function useConversations() {
           supabase
             .from('places')
             .select('id, nome')
-            .eq('id', conv.place_id)
+            .eq('id', placeId)
             .single()
         ]);
 
@@ -74,6 +82,8 @@ export function useConversations() {
             otherUser: profileRes.data,
             place: placeRes.data
           });
+        } else if (profileRes.data && !placeRes.data) {
+          console.warn(`[useConversations] Place ${placeId} not found for conversation ${conv.id}`);
         }
       }
 
@@ -108,6 +118,9 @@ export function useConversations() {
     return { error };
   };
 
+  /**
+   * Get conversation with a specific user at a specific place.
+   */
   const getConversationWithUser = (otherUserId: string, placeId?: string) => {
     return conversations.find(c => {
       const isMatch = c.otherUser.id === otherUserId;

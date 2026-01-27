@@ -12,26 +12,31 @@ export interface PersonNearby {
   commonInterests: string[];
 }
 
-export function usePeopleNearby(locationId: string | null) {
+/**
+ * Fetch people with active presence at the same place.
+ * Uses place_id as the source of truth.
+ */
+export function usePeopleNearby(placeId: string | null) {
   const { user } = useAuth();
   const [people, setPeople] = useState<PersonNearby[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchPeopleNearby = async () => {
-    if (!user || !locationId) {
+    if (!user || !placeId) {
       setPeople([]);
       setLoading(false);
       return;
     }
 
     try {
-      // Get active presences at this location (excluding current user)
+      // Get active presences at this place (excluding current user)
+      // Query by place_id first, fall back to location_id for backwards compatibility
       const { data: presences, error: presenceError } = await supabase
         .from('presence')
         .select('*')
-        .eq('location_id', locationId)
         .eq('ativo', true)
-        .neq('user_id', user.id);
+        .neq('user_id', user.id)
+        .or(`place_id.eq.${placeId},location_id.eq.${placeId}`);
 
       if (presenceError) throw presenceError;
       if (!presences || presences.length === 0) {
@@ -105,7 +110,7 @@ export function usePeopleNearby(locationId: string | null) {
     // Refresh every 30 seconds
     const interval = setInterval(fetchPeopleNearby, 30000);
     return () => clearInterval(interval);
-  }, [user, locationId]);
+  }, [user, placeId]);
 
   return {
     people,

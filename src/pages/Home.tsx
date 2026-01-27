@@ -18,7 +18,7 @@ export default function Home() {
   const { toast } = useToast();
   const { 
     currentPresence, 
-    currentLocation, 
+    currentPlace, 
     formatRemainingTime,
     renewPresence, 
     deactivatePresence,
@@ -27,7 +27,7 @@ export default function Home() {
     presenceRadiusMeters,
     loading: presenceLoading 
   } = usePresence();
-  const { people, loading: peopleLoading, refetch: refetchPeople } = usePeopleNearby(currentLocation?.id || null);
+  const { people, loading: peopleLoading, refetch: refetchPeople } = usePeopleNearby(currentPlace?.id || null);
   const { sendWave, hasWavedTo, refetch: refetchWaves } = useWaves();
 
   useEffect(() => {
@@ -57,9 +57,9 @@ export default function Home() {
   }, [lastEndReason, toast, clearLastEndReason, refetchWaves]);
 
   const handleWave = async (toUserId: string) => {
-    if (!currentLocation) return;
+    if (!currentPlace) return;
     
-    const { error } = await sendWave(toUserId, currentLocation.id);
+    const { error } = await sendWave(toUserId, currentPlace.id);
     if (error) {
       toast({ variant: 'destructive', title: error.message });
     } else {
@@ -78,7 +78,7 @@ export default function Home() {
   }
 
   // No active presence - prompt to select location
-  if (!currentPresence || !currentLocation) {
+  if (!currentPresence || !currentPlace) {
     return (
       <MobileLayout>
         <div className="p-4 space-y-6">
@@ -109,7 +109,7 @@ export default function Home() {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <MapPin className="h-5 w-5" />
-                <span className="font-medium">{currentLocation.nome}</span>
+                <span className="font-medium">{currentPlace.nome}</span>
               </div>
               <div className="flex items-center gap-1 text-sm opacity-80">
                 <Clock className="h-4 w-4" />
@@ -162,7 +162,7 @@ export default function Home() {
         ) : (
           <div className="space-y-3">
             {people.map((person) => {
-              const alreadyWaved = hasWavedTo(person.id, currentLocation.id);
+              const alreadyWaved = hasWavedTo(person.id, currentPlace.id);
               const age = person.profile.data_nascimento 
                 ? new Date().getFullYear() - new Date(person.profile.data_nascimento).getFullYear()
                 : null;
