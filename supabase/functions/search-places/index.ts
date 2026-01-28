@@ -6,17 +6,27 @@ const corsHeaders = {
 };
 
 // Foursquare Places API response format
+// Note: The API returns categories with 'id' field which contains legacy v2 hex IDs
+// When stored in DB, we use 'fsq_category_id' for compatibility
 interface FoursquareCategory {
-  fsq_category_id: string;
+  id?: string;              // Direct API response uses 'id'
+  fsq_category_id?: string; // DB stored data uses 'fsq_category_id'  
   name: string;
   short_name?: string;
 }
 
 interface FoursquarePlace {
-  fsq_place_id: string;
+  fsq_id?: string;
+  fsq_place_id?: string;  // API returns this field name
   name: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
+  geocodes?: {
+    main: {
+      latitude: number;
+      longitude: number;
+    };
+  };
   location: {
     address?: string;
     locality?: string;
@@ -44,729 +54,485 @@ interface SearchParams {
 // interagir com desconhecidos. 
 // 
 // IMPORTANTE: Toda decisão de inclusão/exclusão é feita EXCLUSIVAMENTE por
-// fsq_category_id. Nenhum texto, nome ou heurística é utilizado.
+// fsq_category_id no formato LEGADO V2 (hex strings como 4bf58dd8d48988d...).
 //
-// Foursquare category IDs reference:
-// https://docs.foursquare.com/data-products/docs/categories
+// Referência: Foursquare Legacy Category IDs (v2 format)
 // =============================================================================
 
 // -----------------------------------------------------------------------------
-// ALLOWED CATEGORY IDS (fsq_category_id)
+// ALLOWED CATEGORY IDS (Legacy v2 hex format)
 // Um local é incluído se possuir ao menos um ID nesta lista
 // -----------------------------------------------------------------------------
 
 const ALLOWED_CATEGORY_IDS = new Set([
-  // ===== NIGHTLIFE =====
-  "13003", // Bar
-  "13009", // Beer Bar
-  "13010", // Beer Garden
-  "13014", // Brewery
-  "13017", // Champagne Bar
-  "13018", // Cocktail Bar
-  "13019", // Dive Bar
-  "13021", // Hookah Bar
-  "13022", // Hotel Bar
-  "13024", // Karaoke Bar
-  "13025", // Lounge
-  "13026", // Night Market
-  "13027", // Nightclub
-  "13028", // Other Nightlife
-  "13029", // Pub
-  "13031", // Sake Bar
-  "13032", // Speakeasy
-  "13033", // Sports Bar
-  "13034", // Tiki Bar
-  "13035", // Whisky Bar
-  "13036", // Wine Bar
-  "13037", // Piano Bar
-  "13038", // Pool Hall
-  "13039", // Rooftop Bar
-  
-  // ===== DINING (with permanence) =====
-  "13065", // Restaurant (generic)
-  "13002", // Afghan Restaurant
-  "13004", // African Restaurant
-  "13005", // American Restaurant
-  "13007", // Arepa Restaurant
-  "13011", // Australian Restaurant
-  "13015", // Austrian Restaurant
-  "13023", // BBQ Joint / Churrascaria
-  "13040", // Bistro
-  "13041", // Brasserie
-  "13042", // Brazilian Restaurant
-  "13044", // British Restaurant
-  "13046", // Cajun / Creole Restaurant
-  "13047", // Caribbean Restaurant
-  "13048", // Chinese Restaurant
-  "13049", // Colombian Restaurant
-  "13050", // Cuban Restaurant
-  "13051", // Czech Restaurant
-  "13052", // Diner
-  "13053", // Dim Sum Restaurant
-  "13054", // Ethiopian Restaurant
-  "13055", // Filipino Restaurant
-  "13056", // Fondue Restaurant
-  "13057", // French Restaurant
-  "13058", // Gastropub
-  "13059", // German Restaurant
-  "13061", // Greek Restaurant
-  "13062", // Hawaiian Restaurant
-  "13064", // Indian Restaurant
-  "13066", // Indonesian Restaurant
-  "13067", // Irish Restaurant
-  "13068", // Israeli Restaurant
-  "13069", // Italian Restaurant
-  "13070", // Japanese Restaurant
-  "13071", // Korean Restaurant
-  "13072", // Latin American Restaurant
-  "13073", // Lebanese Restaurant
-  "13074", // Malaysian Restaurant
-  "13075", // Mediterranean Restaurant
-  "13076", // Mexican Restaurant
-  "13077", // Middle Eastern Restaurant
-  "13078", // Modern European Restaurant
-  "13079", // Molecular Gastronomy Restaurant
-  "13080", // Mongolian Restaurant
-  "13081", // Moroccan Restaurant
-  "13082", // New American Restaurant
-  "13083", // Pakistani Restaurant
-  "13084", // Peruvian Restaurant
-  "13085", // Pizza Place
-  "13086", // Polish Restaurant
-  "13087", // Portuguese Restaurant
-  "13088", // Russian Restaurant
-  "13089", // Scandinavian Restaurant
-  "13090", // Seafood Restaurant
-  "13091", // Singaporean Restaurant
-  "13092", // South American Restaurant
-  "13093", // Southern / Soul Food Restaurant
-  "13094", // Spanish Restaurant
-  "13095", // Sri Lankan Restaurant
-  "13096", // Steakhouse
-  "13097", // Sushi Restaurant
-  "13098", // Swiss Restaurant
-  "13099", // Syrian Restaurant
-  "13100", // Taiwanese Restaurant
-  "13101", // Tapas Restaurant
-  "13102", // Thai Restaurant
-  "13103", // Tibetan Restaurant
-  "13104", // Turkish Restaurant
-  "13105", // Ukrainian Restaurant
-  "13106", // Venezuelan Restaurant
-  "13107", // Vietnamese Restaurant
-  "13199", // Buffet
-  "13236", // Ramen Restaurant
-  "13237", // Udon Restaurant
-  "13263", // Fine Dining Restaurant
-  "13272", // Wine Bar Restaurant
-  "13302", // Izakaya
-  "13303", // Japanese Curry Restaurant
-  "13338", // Tonkatsu Restaurant
-  "13339", // Yakitori Restaurant
-  "13377", // Trattoria
-  "13383", // Teppanyaki Restaurant
+  // ===== NIGHTLIFE (parent: 4d4b7105d754a06376d81259) =====
+  "4d4b7105d754a06376d81259", // Nightlife Spot (parent)
+  "4bf58dd8d48988d116941735", // Bar
+  "52e81612bcbc57f1066b7a0d", // Beach Bar
+  "4bf58dd8d48988d117941735", // Beer Garden
+  "50327c8591d4c4b30a586d5d", // Brewery
+  "52e81612bcbc57f1066b7a0e", // Champagne Bar
+  "4bf58dd8d48988d11e941735", // Cocktail Bar
+  "4bf58dd8d48988d118941735", // Dive Bar
+  "4bf58dd8d48988d119941735", // Hookah Bar
+  "4bf58dd8d48988d1d5941735", // Hotel Bar
+  "4bf58dd8d48988d120941735", // Karaoke Bar
+  "4bf58dd8d48988d121941735", // Lounge
+  "4bf58dd8d48988d11f941735", // Nightclub
+  "4bf58dd8d48988d11a941735", // Other Nightlife
+  "4bf58dd8d48988d11b941735", // Pub
+  "4bf58dd8d48988d11c941735", // Sake Bar
+  "4bf58dd8d48988d1d4941735", // Speakeasy
+  "4bf58dd8d48988d11d941735", // Sports Bar
+  "4bf58dd8d48988d122941735", // Whisky Bar
+  "4bf58dd8d48988d123941735", // Wine Bar
+  "4bf58dd8d48988d1e8931735", // Piano Bar
+  "4bf58dd8d48988d1e3931735", // Pool Hall
+  "4bf58dd8d48988d1ea941735", // Apres Ski Bar
+
+  // ===== DINING (parent: 4d4b7105d754a06374d81259) =====
+  "4bf58dd8d48988d1c4941735", // Restaurant (generic)
+  "503288ae91d4c4b30a586d67", // Afghan Restaurant
+  "4bf58dd8d48988d1c8941735", // African Restaurant
+  "4bf58dd8d48988d14e941735", // American Restaurant
+  "4bf58dd8d48988d152941735", // Arepa Restaurant
+  "4bf58dd8d48988d107941735", // Argentinian Restaurant
+  "4bf58dd8d48988d142941735", // Asian Restaurant
+  "4bf58dd8d48988d169941735", // Australian Restaurant
+  "52e81612bcbc57f1066b7a01", // Austrian Restaurant
+  "4bf58dd8d48988d1df931735", // BBQ Joint / Churrascaria
+  "52e81612bcbc57f1066b79f1", // Bistro
+  "4bf58dd8d48988d16b941735", // Brazilian Restaurant
+  "52939a643cf9994f4e043a33", // Churrascaria
+  "4bf58dd8d48988d143941735", // Breakfast Spot
+  "52e81612bcbc57f1066b79f4", // Buffet
+  "4bf58dd8d48988d16c941735", // Burger Joint
+  "4bf58dd8d48988d17a941735", // Cajun / Creole Restaurant
+  "4bf58dd8d48988d144941735", // Caribbean Restaurant
+  "4bf58dd8d48988d145941735", // Chinese Restaurant
+  "4bf58dd8d48988d154941735", // Cuban Restaurant
+  "52f2ae52bcbc57f1066b8b81", // Czech Restaurant
+  "4bf58dd8d48988d1f5931735", // Dim Sum Restaurant
+  "4bf58dd8d48988d147941735", // Diner
+  "4e0e22f5a56208c4ea9a85a0", // Distillery
+  "4bf58dd8d48988d10a941735", // Ethiopian Restaurant
+  "4eb1bd1c3b7b55596b4a748f", // Filipino Restaurant
+  "52e81612bcbc57f1066b7a09", // Fondue Restaurant
+  "4bf58dd8d48988d10c941735", // French Restaurant
+  "4bf58dd8d48988d155941735", // Gastropub
+  "4bf58dd8d48988d10d941735", // German Restaurant
+  "4bf58dd8d48988d10e941735", // Greek Restaurant
+  "52e81612bcbc57f1066b79fe", // Hawaiian Restaurant
+  "4bf58dd8d48988d10f941735", // Indian Restaurant
+  "4deefc054765f83613cdba6f", // Indonesian Restaurant
+  "52e81612bcbc57f1066b7a06", // Irish Pub
+  "4bf58dd8d48988d110941735", // Italian Restaurant
+  "4bf58dd8d48988d111941735", // Japanese Restaurant
+  "4bf58dd8d48988d113941735", // Korean Restaurant
+  "4bf58dd8d48988d1be941735", // Latin American Restaurant
+  "4bf58dd8d48988d156941735", // Malaysian Restaurant
+  "4bf58dd8d48988d1c0941735", // Mediterranean Restaurant
+  "4bf58dd8d48988d1c1941735", // Mexican Restaurant
+  "4bf58dd8d48988d115941735", // Middle Eastern Restaurant
+  "52e81612bcbc57f1066b79f9", // Modern European Restaurant
+  "4bf58dd8d48988d1c2941735", // Molecular Gastronomy Restaurant
+  "4eb1d5724b900d56c88a45fe", // Mongolian Restaurant
+  "4bf58dd8d48988d1c3941735", // Moroccan Restaurant
+  "4bf58dd8d48988d157941735", // New American Restaurant
+  "52e81612bcbc57f1066b79f8", // Pakistani Restaurant
+  "4eb1bfa43b7b52c0e1adc2e8", // Peruvian Restaurant
+  "4bf58dd8d48988d1ca941735", // Pizza Place
+  "52e81612bcbc57f1066b7a04", // Polish Restaurant
+  "4def73e84765ae376e57713a", // Portuguese Restaurant
+  "5293a7563cf9994f4e043a44", // Russian Restaurant
+  "4bf58dd8d48988d1c6941735", // Scandinavian Restaurant
+  "4bf58dd8d48988d1ce941735", // Seafood Restaurant
+  "4bf58dd8d48988d14f941735", // Southern / Soul Food Restaurant
+  "4bf58dd8d48988d1cd941735", // South American Restaurant
+  "4bf58dd8d48988d150941735", // Spanish Restaurant
+  "4bf58dd8d48988d1cc941735", // Steakhouse
+  "4bf58dd8d48988d1d2941735", // Sushi Restaurant
+  "4bf58dd8d48988d158941735", // Swiss Restaurant
+  "4bf58dd8d48988d1db931735", // Tapas Restaurant
+  "4bf58dd8d48988d1dc931735", // Tea Room
+  "4bf58dd8d48988d149941735", // Thai Restaurant
+  "52af39fb3cf9994f4e043be9", // Tibetan Restaurant
+  "4f04af1f2fb6e1c99f3db0bb", // Turkish Restaurant
+  "52e928d0bcbc57f1066b7e96", // Ukrainian Restaurant
+  "4bf58dd8d48988d14a941735", // Vietnamese Restaurant
+  "4bf58dd8d48988d14b941735", // Winery
+  "4bf58dd8d48988d1d1941735", // Ramen / Noodle House
+  "52af0bd33cf9994f4e043bdd", // Hotpot Restaurant
 
   // ===== CAFÉS & COFFEE =====
-  "13032", // Coffee Shop
-  "13034", // Café
-  "13035", // Tea Room
-  "13063", // Coffeehouse
+  "4bf58dd8d48988d1e0931735", // Coffee Shop
+  "4bf58dd8d48988d16d941735", // Café
+  "52e81612bcbc57f1066b7a0c", // Bubble Tea Shop
 
-  // ===== ARTS & ENTERTAINMENT =====
-  "10000", // Arts and Entertainment (parent)
-  "10001", // Amphitheater
-  "10002", // Aquarium
-  "10003", // Arcade
-  "10004", // Art Gallery
-  "10005", // Bowling Alley
-  "10006", // Casino
-  "10007", // Circus
-  "10008", // Comedy Club
-  "10009", // Concert Hall
-  "10010", // Country Dance Club
-  "10011", // Cultural Center
-  "10012", // Disc Golf Course
-  "10013", // Drive-in Movie Theater
-  "10014", // Escape Room
-  "10015", // General Entertainment
-  "10016", // Go Kart Track
-  "10017", // Haunted House
-  "10018", // Karaoke Box
-  "10019", // Laser Tag
-  "10020", // Mini Golf
-  "10021", // Movie Theater
-  "10022", // Museum
-  "10023", // Music Festival
-  "10024", // Music Venue
-  "10025", // Opera House
-  "10026", // Outdoor Sculpture
-  "10027", // Performing Arts Venue
-  "10028", // Planetarium
-  "10029", // Pool Hall
-  "10030", // Public Art
-  "10031", // Racetrack
-  "10032", // Rock Climbing Spot
-  "10033", // Roller Rink
-  "10034", // Salsa Club
-  "10035", // Shooting Range
-  "10036", // Samba School
-  "10037", // Stadium
-  "10038", // Strip Club
-  "10039", // Theme Park
-  "10040", // Theater
-  "10041", // Water Park
-  "10042", // Zoo
-  "10043", // Art Museum
-  "10044", // History Museum
-  "10045", // Science Museum
-  "10046", // Children's Museum
-  "10047", // Wax Museum
-  "10048", // Natural History Museum
+  // ===== ARTS & ENTERTAINMENT (parent: 4d4b7104d754a06370d81259) =====
+  "4d4b7104d754a06370d81259", // Arts and Entertainment (parent)
+  "4fceea171983d5d06c3e9823", // Aquarium
+  "4bf58dd8d48988d1e1931735", // Arcade
+  "4bf58dd8d48988d1e2931735", // Art Gallery
+  "4bf58dd8d48988d1e4931735", // Bowling Alley
+  "4bf58dd8d48988d17c941735", // Casino
+  "52e81612bcbc57f1066b79e7", // Circus
+  "4bf58dd8d48988d18e941735", // Comedy Club
+  "5032792091d4c4b30a586d5c", // Concert Hall
+  "52e81612bcbc57f1066b79ef", // Country Dance Club
+  "4bf58dd8d48988d1f1931735", // General Entertainment
+  "52e81612bcbc57f1066b79ea", // Go Kart Track
+  "52e81612bcbc57f1066b7a11", // Gun Range
+  "52e81612bcbc57f1066b7a06", // Laser Tag (exists but in different section)
+  "52e81612bcbc57f1066b79eb", // Mini Golf
+  "4bf58dd8d48988d17f941735", // Movie Theater
+  "4bf58dd8d48988d17e941735", // Indie Movie Theater
+  "4bf58dd8d48988d180941735", // Multiplex
+  "4bf58dd8d48988d181941735", // Museum
+  "4bf58dd8d48988d18f941735", // Art Museum
+  "4bf58dd8d48988d190941735", // History Museum
+  "4bf58dd8d48988d192941735", // Planetarium
+  "4bf58dd8d48988d191941735", // Science Museum
+  "4bf58dd8d48988d1e5931735", // Music Venue
+  "4bf58dd8d48988d1e7931735", // Jazz Club
+  "4bf58dd8d48988d1e9931735", // Rock Club
+  "4bf58dd8d48988d1f2931735", // Performing Arts Venue
+  "4bf58dd8d48988d136941735", // Opera House
+  "4bf58dd8d48988d137941735", // Theater
+  "4bf58dd8d48988d1f4931735", // Racetrack
+  "52e81612bcbc57f1066b79e9", // Roller Rink
+  "52e81612bcbc57f1066b79ec", // Salsa Club
+  "4bf58dd8d48988d184941735", // Stadium
+  "4bf58dd8d48988d18c941735", // Baseball Stadium
+  "4bf58dd8d48988d18b941735", // Basketball Stadium
+  "4bf58dd8d48988d189941735", // Football Stadium
+  "4bf58dd8d48988d185941735", // Hockey Arena
+  "4bf58dd8d48988d188941735", // Soccer Stadium
+  "4bf58dd8d48988d182941735", // Theme Park
+  "5109983191d435c0d71c2bb1", // Theme Park Ride / Attraction
+  "4bf58dd8d48988d193941735", // Water Park
+  "4bf58dd8d48988d17b941735", // Zoo
 
-  // ===== EVENTS =====
-  "14000", // Event (parent)
-  "14001", // Christmas Market
-  "14002", // Conference
-  "14003", // Convention
-  "14004", // Festival
-  "14005", // Music Festival
-  "14006", // Parade
-  "14007", // Stoop Sale
-  "14008", // Street Fair
-  "14009", // Trade Fair
-  
-  // ===== OUTDOORS & RECREATION (social public spaces) =====
-  "16000", // Outdoors and Recreation (parent)
-  "16001", // Athletic Field
-  "16002", // Baseball Field
-  "16003", // Basketball Court
-  "16004", // Bay
-  "16005", // Beach
-  "16006", // Bike Trail
-  "16007", // Boardwalk
-  "16008", // Botanical Garden
-  "16009", // Bridge
-  "16010", // Canal
-  "16011", // Castle
-  "16012", // Cave
-  "16014", // Dog Park
-  "16015", // Farm
-  "16017", // Garden
-  "16018", // Golf Course
-  "16019", // Harbor / Marina
-  "16020", // Hot Spring
-  "16021", // Island
-  "16024", // Lake
-  "16025", // Lighthouse
-  "16027", // Monument / Landmark
-  "16028", // Mountain
-  "16029", // National Park
-  "16030", // Nature Preserve
-  "16032", // Park
-  "16033", // Pedestrian Plaza
-  "16034", // Pier
-  "16035", // Playground
-  "16036", // Plaza
-  "16037", // Pool
-  "16038", // Recreation Center
-  "16039", // Reservoir
-  "16040", // River
-  "16041", // Rock
-  "16042", // Roof Deck
-  "16043", // Scenic Lookout
-  "16044", // Sculpture Garden
-  "16045", // Skate Park
-  "16046", // Skating Rink
-  "16047", // Ski Area
-  "16048", // Ski Chairlift
-  "16049", // Ski Chalet
-  "16050", // Ski Lodge
-  "16051", // Soccer Field
-  "16052", // Spiritual Center
-  "16053", // State / Provincial Park
-  "16054", // Summer Camp
-  "16055", // Tennis Court
-  "16056", // Track
-  "16057", // Volleyball Court
-  "16058", // Waterfall
-  "16059", // Waterfront
-  "16060", // Well
-  "16061", // Windmill
-  "16062", // Winery
-  "16063", // Town Square
+  // ===== EVENTS (parent: 4d4b7105d754a06373d81259) =====
+  "4d4b7105d754a06373d81259", // Event (parent)
+  "5267e4d9e4b0ec79466e48c6", // Conference
+  "5267e4d9e4b0ec79466e48c9", // Convention
+  "5267e4d9e4b0ec79466e48c7", // Festival
+  "5267e4d9e4b0ec79466e48d1", // Music Festival
+  "5267e4d9e4b0ec79466e48c8", // Other Event
+  "52741d85e4b0d5d1e3c6a6d9", // Parade
+  "52f2ab2ebcbc57f1066b8b54", // Stoop Sale
+  "5267e4d8e4b0ec79466e48c5", // Street Fair
 
-  // ===== COLLEGE & UNIVERSITY =====
-  "12056", // College & University (parent)
-  "12057", // College Academic Building
-  "12058", // College Administrative Building
-  "12059", // College Arts Building
-  "12060", // College Auditorium
-  "12061", // College Bookstore
-  "12062", // College Cafeteria
-  "12063", // College Communications Building
-  "12064", // College Engineering Building
-  "12065", // College Gym
-  "12066", // College History Building
-  "12067", // College Lab
-  "12068", // College Library
-  "12069", // College Math Building
-  "12070", // College Quad
-  "12071", // College Rec Center
-  "12072", // College Residence Hall
-  "12073", // College Science Building
-  "12074", // College Stadium
-  "12075", // College Technology Building
-  "12076", // College Theater
-  "12077", // Student Center
-  "12078", // University
-  "12079", // Community College
-  "12080", // Fraternity House
-  "12081", // Sorority House
-  "12082", // Law School
-  "12083", // Medical School
-  "12084", // Trade School
+  // ===== OUTDOORS & RECREATION (parent: 4d4b7105d754a06377d81259) =====
+  "4d4b7105d754a06377d81259", // Outdoors and Recreation (parent)
+  "4f4528bc4b90abdf24c9de85", // Athletics & Sports
+  "4bf58dd8d48988d1e8941735", // Baseball Field (note: different from above)
+  "4bf58dd8d48988d1e1941735", // Basketball Court (conflicts with Arcade - different ID in outdoors)
+  "4bf58dd8d48988d1e6941735", // Golf Course
+  "4bf58dd8d48988d167941735", // Skate Park
+  "4bf58dd8d48988d168941735", // Skating Rink
+  "4cce455aebf7b749d5e191f5", // Soccer Field
+  "4e39a956bd410d7aed40cbc3", // Tennis Court
+  "4eb1bf013b7b6f98df247e07", // Volleyball Court
+  "4bf58dd8d48988d1e2941735", // Beach (note: same ID as Art Gallery? Using outdoors)
+  "52e81612bcbc57f1066b7a22", // Botanical Garden
+  "4bf58dd8d48988d1e5941735", // Dog Run
+  "4bf58dd8d48988d15a941735", // Garden
+  "4bf58dd8d48988d1e0941735", // Harbor / Marina
+  "4bf58dd8d48988d160941735", // Hot Spring
+  "50aaa4314b90af0d42d5de10", // Island
+  "4bf58dd8d48988d161941735", // Lake
+  "4bf58dd8d48988d15d941735", // Lighthouse
+  "4eb1d4d54b900d56c88a45fc", // Mountain
+  "52e81612bcbc57f1066b7a21", // National Park
+  "52e81612bcbc57f1066b7a13", // Nature Preserve
+  "4bf58dd8d48988d163941735", // Park
+  "52e81612bcbc57f1066b7a25", // Pedestrian Plaza
+  "4bf58dd8d48988d1e7941735", // Playground
+  "4bf58dd8d48988d164941735", // Plaza
+  "4bf58dd8d48988d15e941735", // Pool
+  "52e81612bcbc57f1066b7a26", // Recreation Center
+  "4eb1d4dd4b900d56c88a45fd", // River
+  "50328a4b91d4c4b30a586d6b", // Rock Climbing Spot
+  "4bf58dd8d48988d165941735", // Scenic Lookout
+  "4bf58dd8d48988d166941735", // Sculpture Garden
+  "4bf58dd8d48988d1e9941735", // Ski Area
+  "4eb1c0ed3b7b52c0e1adc2ea", // Ski Chairlift
+  "4bf58dd8d48988d1ec941735", // Ski Chalet
+  "4bf58dd8d48988d1eb941735", // Ski Lodge
+  "4bf58dd8d48988d1de941735", // Vineyard
+  "52e81612bcbc57f1066b7a10", // Summer Camp
+  "50aaa49e4b90af0d42d5de11", // Castle
+
+  // ===== COLLEGE & UNIVERSITY (parent: 4d4b7105d754a06372d81259) =====
+  "4d4b7105d754a06372d81259", // College & University (parent)
+  "4bf58dd8d48988d198941735", // College Academic Building
+  "4bf58dd8d48988d199941735", // College Arts Building
+  "4bf58dd8d48988d19a941735", // College Communications Building
+  "4bf58dd8d48988d19e941735", // College Engineering Building
+  "4bf58dd8d48988d197941735", // College Administrative Building
+  "4bf58dd8d48988d1af941735", // College Auditorium
+  "4bf58dd8d48988d1b1941735", // College Bookstore
+  "4bf58dd8d48988d1a1941735", // College Cafeteria
+  "4bf58dd8d48988d1b2941735", // College Gym
+  "4bf58dd8d48988d1aa941735", // College Quad
+  "4bf58dd8d48988d1a9941735", // College Rec Center
+  "4bf58dd8d48988d1b4941735", // College Stadium
+  "4bf58dd8d48988d1ac941735", // College Theater
+  "4bf58dd8d48988d1a2941735", // Community College
+  "4bf58dd8d48988d1b0941735", // Fraternity House
+  "4bf58dd8d48988d1a8941735", // General College & University
+  "4bf58dd8d48988d141941735", // Sorority House
+  "4bf58dd8d48988d1ab941735", // Student Center
+  "4bf58dd8d48988d1ae941735", // University
 
   // ===== SHOPPING MALLS =====
-  "17069", // Mall
-  "17114", // Shopping Mall
-  "17115", // Shopping Plaza
-  "17116", // Outlet Mall
-  "17117", // Strip Mall
+  "4bf58dd8d48988d1fd941735", // Mall
+  "52e816a6bcbc57f1066b7a54", // Warehouse Store (may be mall-like)
 
   // ===== COWORKING & WORKSPACES =====
-  "11049", // Coworking Space
+  "4bf58dd8d48988d174941735", // Coworking Space
+
+  // ===== SOCIAL CLUBS & COMMUNITY =====
+  "52e81612bcbc57f1066b7a33", // Social Club
+  "52e81612bcbc57f1066b7a34", // Community Center
+  "52e81612bcbc57f1066b7a32", // Cultural Center
+  "4bf58dd8d48988d171941735", // Event Space
+  "4bf58dd8d48988d1ff931735", // Convention Center
 ]);
 
 // -----------------------------------------------------------------------------
-// EXCLUDED CATEGORY IDS (fsq_category_id)
-// Um local é excluído se possuir qualquer ID nesta lista, mesmo que tenha permitido
+// EXCLUDED CATEGORY IDS (Legacy v2 hex format)
+// Um local é excluído se possuir qualquer ID nesta lista
 // -----------------------------------------------------------------------------
 
 const EXCLUDED_CATEGORY_IDS = new Set([
   // ===== HEALTH & MEDICAL =====
-  "15000", // Health and Medicine (parent)
-  "15001", // Acupuncturist
-  "15002", // Alternative Healer
-  "15003", // Chiropractor
-  "15004", // Counseling and Mental Health
-  "15005", // Dentist
-  "15006", // Doctor
-  "15007", // Emergency Room
-  "15008", // Eye Doctor
-  "15009", // First Aid Station
-  "15010", // Hospital
-  "15011", // Laboratory
-  "15012", // Medical Center
-  "15013", // Mental Health Office
-  "15014", // Nutritionist
-  "15015", // OB-GYN
-  "15016", // Optometrist
-  "15017", // Orthopedist
-  "15018", // Pharmacy
-  "15019", // Physical Therapist
-  "15020", // Psychologist
-  "15021", // Rehabilitation Center
-  "15022", // Spa
-  "15023", // Urgent Care Center
-  "15024", // Veterinarian
-  "15025", // Weight Loss Center
-  "15026", // Dermatologist
-  "15027", // Gastroenterologist
-  "15028", // Cardiologist
-  "15029", // Pediatrician
-  "15030", // Podiatrist
-  "15031", // Urologist
+  "4bf58dd8d48988d104941735", // Medical Center
+  "52e81612bcbc57f1066b7a3b", // Acupuncturist
+  "52e81612bcbc57f1066b7a3c", // Alternative Healer
+  "52e81612bcbc57f1066b7a3a", // Chiropractor
+  "4bf58dd8d48988d178941735", // Dentist's Office
+  "4bf58dd8d48988d177941735", // Doctor's Office
+  "4bf58dd8d48988d194941735", // Emergency Room
+  "522e32fae4b09b556e370f19", // Eye Doctor
+  "4bf58dd8d48988d196941735", // Hospital
+  "4f4531b14b9074f6e4fb0103", // Laboratory
+  "52e81612bcbc57f1066b7a39", // Mental Health Office
+  "4d954af4a243a5684765b473", // Veterinarian
+
+  // ===== PHARMACY & DRUGSTORE =====
+  "4bf58dd8d48988d10f951735", // Drugstore / Pharmacy
 
   // ===== FAST FOOD & QUICK SERVICE =====
-  "13145", // Fast Food Restaurant
-  "13146", // Hot Dog Joint
-  "13147", // Ice Cream Shop
-  "13148", // Juice Bar
-  "13149", // Smoothie Shop
-  "13150", // Bagel Shop
-  "13151", // Bakery
-  "13152", // Candy Store
-  "13153", // Cheese Shop
-  "13154", // Chocolate Shop
-  "13155", // Cupcake Shop
-  "13156", // Deli
-  "13157", // Dessert Shop
-  "13158", // Donut Shop
-  "13159", // Dumpling Restaurant
-  "13160", // Empanada Restaurant
-  "13161", // Falafel Restaurant
-  "13162", // Food Court
-  "13163", // Food Truck
-  "13164", // Fried Chicken Joint
-  "13165", // Frozen Yogurt Shop
-  "13166", // Gluten-Free Restaurant
-  "13167", // Gourmet Shop
-  "13168", // Halal Restaurant
-  "13169", // Health Food Store
-  "13170", // Hot Pot Restaurant
-  "13171", // Kosher Restaurant
-  "13172", // Noodle House
-  "13173", // Salad Place
-  "13174", // Sandwich Place
-  "13175", // Snack Place
-  "13176", // Soup Place
-  "13177", // Vegetarian / Vegan Restaurant
-  "13178", // Wing Joint
-  "13179", // Wok Restaurant
-  "13180", // Wrap Joint
-  "13383", // Food Stand
-  "13384", // Kiosk
-  "13385", // Street Food Gathering
+  "4bf58dd8d48988d16e941735", // Fast Food Restaurant
+  "4bf58dd8d48988d16f941735", // Hot Dog Joint
+  "4bf58dd8d48988d1c9941735", // Ice Cream Shop
+  "4bf58dd8d48988d112941735", // Juice Bar
+  "52f2ab2ebcbc57f1066b8b41", // Smoothie Shop
+  "4bf58dd8d48988d179941735", // Bagel Shop
+  "4bf58dd8d48988d16a941735", // Bakery
+  "4bf58dd8d48988d117951735", // Candy Store
+  "4bf58dd8d48988d1bc941735", // Cupcake Shop
+  "4bf58dd8d48988d1d0941735", // Dessert Shop
+  "4bf58dd8d48988d148941735", // Donut Shop
+  "4bf58dd8d48988d108941735", // Dumpling Restaurant
+  "4bf58dd8d48988d10b941735", // Falafel Restaurant
+  "4bf58dd8d48988d1cb941735", // Food Truck
+  "4d4ae6fc7a7b7dea34424761", // Fried Chicken Joint
+  "512e7cae91d4cbb4e5efe0af", // Frozen Yogurt
+  "4bf58dd8d48988d1bd941735", // Salad Place
+  "4bf58dd8d48988d1c5941735", // Sandwich Place
+  "4bf58dd8d48988d1c7941735", // Snack Place
+  "4bf58dd8d48988d1dd931735", // Soup Place
+  "4bf58dd8d48988d14c941735", // Wings Joint
+  "4bf58dd8d48988d151941735", // Taco Place
+  "4bf58dd8d48988d153941735", // Burrito Place
 
-  // ===== RETAIL & STORES =====
-  "17000", // Retail (parent)
-  "17001", // Antique Shop
-  "17002", // Arts and Crafts Store
-  "17003", // Astrologer
-  "17004", // Baby Store
-  "17005", // Bath House
-  "17006", // Beauty Store
-  "17007", // Bed and Bath Store
-  "17008", // Big Box Store
-  "17009", // Bike Shop
-  "17010", // Board Shop
-  "17011", // Book Store
-  "17012", // Bridal Shop
-  "17013", // Camera Store
-  "17014", // Candy Store
-  "17015", // Car Parts and Accessories
-  "17016", // Card Shop
-  "17017", // Carpet Store
-  "17018", // Check Cashing Service
-  "17019", // Children's Clothing Store
-  "17020", // Clothing Store
-  "17021", // Collectibles Store
-  "17022", // Consignment Shop
-  "17023", // Container Store
-  "17024", // Convenience Store
-  "17025", // Cosmetics Shop
-  "17026", // Costume Shop
-  "17027", // Department Store
-  "17028", // Design Studio
-  "17029", // Discount Store
-  "17030", // Dive Shop
-  "17031", // Drug Store / Pharmacy
-  "17032", // Electronics Store
-  "17033", // Eyewear Store
-  "17034", // Fabric Shop
-  "17035", // Fireplace Store
-  "17036", // Fireworks Store
-  "17037", // Fishing Store
-  "17038", // Flea Market
-  "17039", // Florist
-  "17040", // Frame Store
-  "17041", // Fruit and Vegetable Store
-  "17042", // Furniture and Home Store
-  "17043", // Game Store
-  "17044", // Garden Center
-  "17045", // Gift Shop
-  "17046", // Golf Shop
-  "17047", // Grocery Store
-  "17048", // Gun Shop
-  "17049", // Hardware Store
-  "17050", // Herbs and Spices Store
-  "17051", // Hobby Shop
-  "17052", // Home Service
-  "17053", // Hunting Supply
-  "17054", // IT Services
-  "17055", // Jewelry Store
-  "17056", // Knitting Store
-  "17057", // Leather Goods Store
-  "17058", // Lighting Store
-  "17059", // Lingerie Store
-  "17060", // Liquor Store
-  "17061", // Luggage Store
-  "17062", // Market
-  "17063", // Martial Arts Supply
-  "17064", // Mattress Store
-  "17065", // Men's Store
-  "17066", // Miscellaneous Shop
-  "17067", // Mobile Phone Shop
-  "17068", // Motorcycle Shop
-  "17070", // Music Store
-  "17071", // Nail Salon
-  "17072", // Newsstand
-  "17073", // Office Supplies Store
-  "17074", // Optical Shop
-  "17075", // Organic Grocery
-  "17076", // Outdoor Supply Store
-  "17077", // Outlet Store
-  "17078", // Paper Store
-  "17079", // Party Store
-  "17080", // Pawn Shop
-  "17081", // Perfume Shop
-  "17082", // Pet Store
-  "17083", // Photography Lab
-  "17084", // Piercing Parlor
-  "17085", // Pop-Up Shop
-  "17086", // Print Shop
-  "17087", // Record Shop
-  "17088", // Rental Service
-  "17089", // Salon / Barbershop
-  "17090", // Shoe Store
-  "17091", // Skateboard Shop
-  "17092", // Ski Shop
-  "17093", // Smoke Shop
-  "17094", // Souvenir Shop
-  "17095", // Spa
-  "17096", // Sporting Goods Shop
-  "17097", // Stationery Store
-  "17098", // Storage Facility
-  "17099", // Supermarket
-  "17100", // Supplement Shop
-  "17101", // Tailor
-  "17102", // Tanning Salon
-  "17103", // Tattoo Parlor
-  "17104", // Thrift / Vintage Store
-  "17105", // Tire Shop / Garage
-  "17106", // Tobacco Shop
-  "17107", // Toy Store
-  "17108", // Trophy Shop
-  "17109", // Used Bookstore
-  "17110", // Video Game Store
-  "17111", // Video Store
-  "17112", // Watch Shop
-  "17113", // Women's Store
+  // ===== RETAIL & STORES (parent: 4d4b7105d754a06378d81259) =====
+  "4d4b7105d754a06378d81259", // Shop & Service (parent)
+  "4bf58dd8d48988d116951735", // Antique Shop
+  "4bf58dd8d48988d127951735", // Arts & Crafts Store
+  "4bf58dd8d48988d124951735", // Automotive Shop
+  "4bf58dd8d48988d10a951735", // Bank
+  "52f2ab2ebcbc57f1066b8b56", // ATM
+  "52f2ab2ebcbc57f1066b8b42", // Big Box Store
+  "4bf58dd8d48988d115951735", // Bike Shop
+  "4bf58dd8d48988d114951735", // Bookstore
+  "4bf58dd8d48988d103951735", // Clothing Store
+  "4d954b0ea243a5684a65b473", // Convenience Store
+  "4bf58dd8d48988d10c951735", // Cosmetics Shop
+  "4bf58dd8d48988d1f6941735", // Department Store
+  "4bf58dd8d48988d122951735", // Electronics Store
+  "4bf58dd8d48988d1f7941735", // Flea Market
+  "4bf58dd8d48988d11b951735", // Flower Shop
+  "4bf58dd8d48988d1f9941735", // Food & Drink Shop
+  "4bf58dd8d48988d1fa941735", // Farmers Market
+  "4bf58dd8d48988d113951735", // Gas Station / Garage
+  "4bf58dd8d48988d128951735", // Gift Shop
+  "4bf58dd8d48988d118951735", // Grocery Store
+  "4bf58dd8d48988d112951735", // Hardware Store
+  "4bf58dd8d48988d1fb941735", // Hobby Shop
+  "4bf58dd8d48988d111951735", // Jewelry Store
+  "52f2ab2ebcbc57f1066b8b33", // Laundromat
+  "4bf58dd8d48988d1fc941735", // Laundry Service
+  "4bf58dd8d48988d186941735", // Liquor Store
+  "52f2ab2ebcbc57f1066b8b3c", // Massage Studio
+  "4bf58dd8d48988d1ff941735", // Miscellaneous Shop
+  "4f04afc02fb6e1c99f3db0bc", // Mobile Phone Shop
+  "4bf58dd8d48988d1fe941735", // Music Store
+  "4f04aa0c2fb6e1c99f3db0b8", // Nail Salon
+  "4d954afda243a5684865b473", // Optical Shop
+  "4bf58dd8d48988d100951735", // Pet Store
+  "4bf58dd8d48988d0d951735", // Record Shop
+  "4bf58dd8d48988d110951735", // Salon / Barbershop
+  "4bf58dd8d48988d123951735", // Smoke Shop
+  "4bf58dd8d48988d1ed941735", // Spa
+  "4bf58dd8d48988d1f2941735", // Sporting Goods Shop
+  "52f2ab2ebcbc57f1066b8b46", // Supermarket
+  "4bf58dd8d48988d1f3941735", // Toy / Game Store
 
   // ===== GROCERY & FOOD RETAIL =====
-  "13287", // Butcher
-  "13288", // Cheese Shop
-  "13289", // Fish Market
-  "13290", // Farmers Market
-  "13291", // Grocery Store
-  "13292", // Organic Grocery
-  "13293", // Specialty Food Store
-  "13294", // Supermarket
+  "4bf58dd8d48988d11d951735", // Butcher
+  "4bf58dd8d48988d11e951735", // Cheese Shop
+  "4bf58dd8d48988d10e951735", // Fish Market
 
   // ===== GOVERNMENT =====
-  "12026", // Government Building (parent)
-  "12027", // Capitol Building
-  "12028", // City Hall
-  "12029", // Consulate
-  "12030", // Courthouse
-  "12031", // Embassy
-  "12032", // Fire Station
-  "12033", // Government
-  "12034", // Military Base
-  "12035", // Police Station
-  "12036", // Post Office
-  "12037", // Town Hall
-  "12038", // Voter Registration Office
+  "4bf58dd8d48988d126941735", // Government Building
+  "4bf58dd8d48988d12a941735", // Capitol Building
+  "4bf58dd8d48988d129941735", // City Hall
+  "4bf58dd8d48988d12b941735", // Courthouse
+  "4bf58dd8d48988d12c951735", // Embassy / Consulate
+  "4bf58dd8d48988d12c941735", // Fire Station
+  "4bf58dd8d48988d12e941735", // Police Station
+  "52e81612bcbc57f1066b7a38", // Town Hall
+  "4e52adeebd41615f56317744", // Military Base
+  "4bf58dd8d48988d172941735", // Post Office
 
   // ===== RELIGION =====
-  "12051", // Spiritual Center (parent)
-  "12052", // Buddhist Temple
-  "12053", // Church
-  "12054", // Hindu Temple
-  "12055", // Mosque
-  "12038", // Shrine
-  "12039", // Synagogue
-  "12040", // Temple
+  "4bf58dd8d48988d131941735", // Spiritual Center
+  "52e81612bcbc57f1066b7a3e", // Buddhist Temple
+  "4bf58dd8d48988d132941735", // Church
+  "52e81612bcbc57f1066b7a3f", // Hindu Temple
+  "4bf58dd8d48988d138941735", // Mosque
+  "4eb1d80a4b900d56c88a45ff", // Shrine
+  "4bf58dd8d48988d139941735", // Synagogue
+  "4bf58dd8d48988d13a941735", // Temple
 
   // ===== SCHOOLS (not university) =====
-  "12041", // School (parent)
-  "12042", // Charter School
-  "12043", // Elementary School
-  "12044", // High School
-  "12045", // Homeschool
-  "12046", // Kindergarten
-  "12047", // Language School
-  "12048", // Middle School
-  "12049", // Preschool
-  "12050", // Private School
-  "12085", // Driving School
+  "4bf58dd8d48988d13b941735", // School
+  "4f4533804b9074f6e4fb0105", // Elementary School
+  "4bf58dd8d48988d13d941735", // High School
+  "4f4533814b9074f6e4fb0106", // Middle School
+  "4f4533814b9074f6e4fb0107", // Nursery School
+  "52e81612bcbc57f1066b7a45", // Preschool
+  "52e81612bcbc57f1066b7a46", // Private School
+  "52e81612bcbc57f1066b7a42", // Driving School
 
-  // ===== RESIDENTIAL =====
-  "12088", // Residential (parent)
-  "12089", // Assisted Living
-  "12090", // Building
-  "12091", // Condominium Complex
-  "12092", // Housing Development
-  "12093", // Mobile Home Park
-  "12094", // Nursing Home
-  "12095", // Residential Building (Apartment / Condo)
-  "12096", // Retirement Home
-  "12097", // Trailer Park
+  // ===== RESIDENTIAL (parent: 4e67e38e036454776db1fb3a) =====
+  "4e67e38e036454776db1fb3a", // Residence (parent)
+  "5032891291d4c4b30a586d68", // Assisted Living
+  "4bf58dd8d48988d103941735", // Home (private)
+  "4f2a210c4b9023bd5841ed28", // Housing Development
+  "4d954b06a243a5684965b473", // Residential Building (Apartment / Condo)
+  "52f2ab2ebcbc57f1066b8b55", // Trailer Park
 
-  // ===== TRANSPORT =====
-  "19000", // Travel and Transportation (parent)
-  "19001", // Airport
-  "19002", // Airport Food Court
-  "19003", // Airport Gate
-  "19004", // Airport Lounge
-  "19005", // Airport Terminal
-  "19006", // Airport Tram
-  "19007", // Bike Rental / Bike Share
-  "19008", // Boat or Ferry
-  "19009", // Border Crossing
-  "19010", // Bus Station
-  "19011", // Bus Stop
-  "19012", // Cable Car
-  "19013", // Cruise
-  "19014", // General Travel
-  "19015", // Heliport
-  "19016", // Hotel
-  "19017", // Hostel
-  "19018", // Light Rail Station
-  "19019", // Metro Station
-  "19020", // Motel
-  "19021", // Moving Target
-  "19022", // Pier
-  "19023", // Plane
-  "19024", // Port
-  "19025", // RV Park
-  "19026", // Rental Car Location
-  "19027", // Rest Area
-  "19028", // Road
-  "19029", // Taxi Stand
-  "19030", // Toll Booth
-  "19031", // Toll Plaza
-  "19032", // Train Station
-  "19033", // Tram Station
-  "19034", // Transportation Service
+  // ===== TRANSPORT (parent: 4d4b7105d754a06379d81259) =====
+  "4d4b7105d754a06379d81259", // Travel & Transport (parent)
+  "4bf58dd8d48988d1ed931735", // Airport
+  "4bf58dd8d48988d1ef931735", // Airport Food Court
+  "4bf58dd8d48988d1f0931735", // Airport Gate
+  "4eb1bc533b7b2c5b1d4306cb", // Airport Lounge
+  "4bf58dd8d48988d1eb931735", // Airport Terminal
+  "4e4c9077bd41f78e849722f9", // Bike Rental / Bike Share
+  "4bf58dd8d48988d12d951735", // Boat or Ferry
+  "52f2ab2ebcbc57f1066b8b4b", // Border Crossing
+  "4bf58dd8d48988d1fe931735", // Bus Station
+  "4bf58dd8d48988d12b951735", // Bus Line
+  "52f2ab2ebcbc57f1066b8b4f", // Bus Stop
+  "52f2ab2ebcbc57f1066b8b50", // Cable Car
+  "4bf58dd8d48988d1f6931735", // General Travel
+  "4bf58dd8d48988d1fa931735", // Hotel
+  "4bf58dd8d48988d1f8931735", // Bed & Breakfast
+  "4bf58dd8d48988d1ee931735", // Hostel
+  "4bf58dd8d48988d1fb931735", // Motel
+  "4bf58dd8d48988d12f951735", // Resort
+  "4bf58dd8d48988d1fc931735", // Light Rail
+  "4f2a23984b9023bd5841ed2c", // Moving Target
+  "4e74f6cabd41c4836eac4c31", // Pier
+  "4bf58dd8d48988d1ef941735", // Rental Car Location
+  "4d954b16a243a5684b65b473", // Rest Area
+  "4bf58dd8d48988d1f9931735", // Road
+  "52f2ab2ebcbc57f1066b8b52", // Street
+  "4bf58dd8d48988d1fd931735", // Subway
+  "4bf58dd8d48988d130951735", // Taxi
+  "52f2ab2ebcbc57f1066b8b4d", // Toll Booth
+  "52f2ab2ebcbc57f1066b8b4e", // Toll Plaza
+  "4bf58dd8d48988d129951735", // Train Station
+  "52f2ab2ebcbc57f1066b8b51", // Tram
 
   // ===== AUTOMOTIVE =====
-  "18000", // Automotive (parent)
-  "18001", // Auto Dealership
-  "18002", // Auto Garage
-  "18003", // Auto Wash
-  "18004", // Gas Station
-  "18005", // Motorcycle Dealership
-  "18006", // Motorcycle Repair Shop
-  "18007", // Parking
-  "18008", // RV Dealership
-  "18009", // Towing Company
+  "4eb1c1623b7b52c0e1adc2ec", // Car Dealership
+  "4f04ae1f2fb6e1c99f3db0ba", // Car Wash
+  "52f2ab2ebcbc57f1066b8b44", // Auto Garage
 
   // ===== PROFESSIONAL SERVICES =====
-  "11000", // Business and Professional Services (parent)
-  "11001", // Accountant
-  "11002", // Advertising Agency
-  "11003", // Architecture Firm
-  "11004", // Art Restoration Service
-  "11005", // Bail Bondsman
-  "11006", // Bank
-  "11007", // Carpet Cleaner
-  "11008", // Check Cashing Service
-  "11009", // Cleaning Service
-  "11010", // Construction and Landscaping
-  "11011", // Currency Exchange
-  "11012", // Distribution Center
-  "11013", // Electrical Equipment Supplier
-  "11014", // Employment Agency
-  "11015", // Engineering Firm
-  "11016", // Event Planner
-  "11017", // Event Space
-  "11018", // Factory
-  "11019", // Film Studio
-  "11020", // Financial or Legal Service
-  "11021", // Funeral Home
-  "11022", // General Contractor
-  "11023", // Graphic Design Studio
-  "11024", // Heating, Ventilating and Air Conditioning Service
-  "11025", // Home Improvement Service
-  "11026", // Human Resources
-  "11027", // Industrial Estate
-  "11028", // Insurance Office
-  "11029", // Internet Cafe
-  "11030", // Investment Office
-  "11031", // IT Services
-  "11032", // Laundromat
-  "11033", // Laundry Service
-  "11034", // Lawyer
-  "11035", // Locksmith
-  "11036", // Marketing Agency
-  "11037", // Media Company
-  "11038", // Message Board
-  "11039", // Miscellaneous Business
-  "11040", // Moving Company
-  "11041", // Non-Profit
-  "11042", // Notary
-  "11043", // Office
-  "11044", // Packaging Service
-  "11045", // Pest Control Service
-  "11046", // Plumber
-  "11047", // Property Management Office
-  "11048", // Publisher
-  "11050", // Radio Station
-  "11051", // Real Estate Office
-  "11052", // Recording Studio
-  "11053", // Recycling Facility
-  "11054", // Shipping Store
-  "11055", // Social Services
-  "11056", // Software Company
-  "11057", // Surveyor
-  "11058", // Talent Agency
-  "11059", // Telecom
-  "11060", // Travel Agency
-  "11061", // TV Station
-  "11062", // Warehouse
-  "11063", // Wedding Planning Service
-  "11064", // Window Cleaning Service
+  "4bf58dd8d48988d124941735", // Office
+  "52e81612bcbc57f1066b7a3d", // Advertising Agency
+  "4bf58dd8d48988d130941735", // Building
+  "4eb1bea83b7b6f98df247e06", // Factory
+  "4f4534884b9074f6e4fb0174", // Funeral Home
+  "52f2ab2ebcbc57f1066b8b3f", // Lawyer
+  "4bf58dd8d48988d12f941735", // Library
+  "50328a8e91d4c4b30a586d6c", // Non-Profit
+  "4c38df4de52ce0d596b336e1", // Parking
+  "5310b8e5bcbc57f1066bcbf1", // Prison
+  "5032856091d4c4b30a586d63", // Radio Station
+  "5032885091d4c4b30a586d66", // Real Estate Office
+  "52f2ab2ebcbc57f1066b8b37", // Recording Studio
+  "4f4531084b9074f6e4fb0101", // Recycling Facility
+  "4f04b1572fb6e1c99f3db0bf", // Storage Facility
+  "52e81612bcbc57f1066b7a36", // Warehouse
+  "52e81612bcbc57f1066b7a31", // TV Station
 
   // ===== GEOGRAPHIC (non-social) =====
-  "16012", // Cave
-  "16013", // Cemetery
-  "16023", // Historic Site
-  "16026", // Hiking Trail
-  "16031", // Other Great Outdoors
-  "16060", // Well
+  "4bf58dd8d48988d15c941735", // Cemetery
+  "4deefb944765f83613cdba6e", // Historic Site
+  "4bf58dd8d48988d159941735", // Trail
+  "4bf58dd8d48988d1e4941735", // Campground
+  "52e81612bcbc57f1066b7a23", // Forest
+  "4bf58dd8d48988d1df941735", // Bridge
 
-  // ===== NEIGHBORHOODS & STREETS =====
-  "12098", // Neighborhood
-  "12099", // Intersection
-  "12100", // States and Municipalities
-  "12101", // City
-  "12102", // County
-  "12103", // Country
-  "12104", // State
-  "12105", // Street
-
-  // ===== LODGING (sleeping, not social) =====
-  "19016", // Hotel
-  "19017", // Hostel
-  "19020", // Motel
-  "19038", // Bed and Breakfast
-  "19039", // Inn
-  "19040", // Vacation Rental
-  "19041", // Resort
-  "19042", // Cabin
-  "19043", // Campground
-  "19044", // Cottage
-  "19045", // Guest House
-  "19046", // Lodge
-  "19047", // Timeshare
+  // ===== NEIGHBORHOODS & STREETS (States & Municipalities) =====
+  "530e33ccbcbc57f1066bbfe4", // States & Municipalities (parent)
+  "50aa9e094b90af0d42d5de0d", // City
+  "5345731ebcbc57f1066c39b2", // County
+  "530e33ccbcbc57f1066bbff7", // Country
+  "4f2a25ac4b909258e854f55f", // Neighborhood
+  "530e33ccbcbc57f1066bbff8", // State
+  "530e33ccbcbc57f1066bbff3", // Town
+  "530e33ccbcbc57f1066bbff9", // Village
 
   // ===== FITNESS (personal, not social) =====
-  "18021", // Gym
-  "18022", // Gym / Fitness Center
-  "18023", // Gym Pool
-  "18024", // Martial Arts Dojo
-  "18025", // Pilates Studio
-  "18026", // Yoga Studio
-  "18027", // Crossfit Box
-  "18028", // Bootcamp
-  "18029", // Boxing Gym
-  "18030", // Climbing Gym
-
-  // ===== LIBRARIES =====
-  "12086", // Library
-  "12087", // Public Library
+  "4bf58dd8d48988d175941735", // Gym / Fitness Center
+  "52f2ab2ebcbc57f1066b8b47", // Boxing Gym
+  "503289d391d4c4b30a586d6a", // Climbing Gym
+  "4bf58dd8d48988d176941735", // Gym
+  "4bf58dd8d48988d101941735", // Martial Arts Dojo
+  "4bf58dd8d48988d102941735", // Yoga Studio
 ]);
 
 // -----------------------------------------------------------------------------
-// FILTERING LOGIC - EXCLUSIVAMENTE POR fsq_category_id
+// FILTERING LOGIC - EXCLUSIVAMENTE POR fsq_category_id (Legacy v2 format)
 // -----------------------------------------------------------------------------
 
 function getCategoryIds(place: FoursquarePlace): string[] {
   if (!place.categories || place.categories.length === 0) {
     return [];
   }
-  return place.categories.map(cat => cat.fsq_category_id).filter(Boolean);
+  // Handle both API response (id) and DB stored data (fsq_category_id)
+  return place.categories.map(cat => cat.id || cat.fsq_category_id).filter(Boolean) as string[];
 }
 
 function shouldIncludePlace(place: FoursquarePlace): boolean {
@@ -849,6 +615,7 @@ Deno.serve(async (req) => {
     let foursquareSuccess = false;
 
     // Build Foursquare API URL - request more places to account for filtering
+    // Using Places API endpoint with Bearer token authentication
     const fsqUrl = new URL("https://places-api.foursquare.com/places/search");
     fsqUrl.searchParams.set("ll", `${latitude},${longitude}`);
     fsqUrl.searchParams.set("radius", String(radius));
@@ -879,7 +646,7 @@ Deno.serve(async (req) => {
         const fsqData = await fsqResponse.json();
         const rawPlaces = fsqData.results || [];
         
-        // Apply category-based filtering using ONLY fsq_category_id
+        // Apply category-based filtering using ONLY fsq_category_id (legacy v2 format)
         places = rawPlaces.filter((place: FoursquarePlace) => shouldIncludePlace(place));
         
         foursquareSuccess = true;
@@ -909,17 +676,18 @@ Deno.serve(async (req) => {
       let persistedCount = 0;
       
       const upsertPromises = places.map(async (place) => {
-        if (!place.fsq_place_id) {
-          console.warn(`[search-places] ⚠️ Missing fsq_place_id:`, place.name);
+        const placeId = place.fsq_id || place.fsq_place_id;
+        if (!placeId) {
+          console.warn(`[search-places] ⚠️ Missing fsq_id:`, place.name);
           return null;
         }
 
         const placeData = {
           provider: "foursquare",
-          provider_id: place.fsq_place_id,
+          provider_id: placeId,
           nome: place.name,
-          latitude: place.latitude,
-          longitude: place.longitude,
+          latitude: place.latitude || place.geocodes?.main?.latitude,
+          longitude: place.longitude || place.geocodes?.main?.longitude,
           endereco: place.location?.address || null,
           cidade: place.location?.locality || null,
           estado: place.location?.region || null,
@@ -938,7 +706,7 @@ Deno.serve(async (req) => {
           });
 
         if (error) {
-          console.error(`[search-places] ⚠️ Upsert error ${place.fsq_place_id}:`, error.message);
+          console.error(`[search-places] ⚠️ Upsert error ${placeId}:`, error.message);
         } else {
           persistedCount++;
         }
