@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { useWaves } from '@/hooks/useWaves';
 import { useConversations } from '@/hooks/useConversations';
 
-// Custom waving hand icon component - matches previous design
+// Custom waving hand icon component
 function WavingHand({ className }: { className?: string }) {
   return (
     <svg 
@@ -12,20 +12,16 @@ function WavingHand({ className }: { className?: string }) {
       viewBox="0 0 24 24" 
       fill="none" 
       stroke="currentColor" 
-      strokeWidth="1.75" 
+      strokeWidth="2" 
       strokeLinecap="round" 
       strokeLinejoin="round"
       className={className}
     >
-      {/* Hand palm and fingers */}
-      <path d="M6.5 12.5V17c0 2 1.5 3.5 4 4.5 2.5-1 4-2.5 4-4.5v-5" />
-      <path d="M8.5 12.5V7.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5" />
-      <path d="M11.5 12.5V6c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v6.5" />
-      <path d="M14.5 12.5V7.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5" />
-      <path d="M6.5 12.5V9c0-.83-.67-1.5-1.5-1.5S3.5 8.17 3.5 9v6c0 1 .5 2 1 3" />
-      {/* Wave motion lines */}
-      <path d="M19 4c.5.5 1 1.5 1 2.5s-.5 2-1 2.5" />
-      <path d="M21 2.5c.75.75 1.5 2 1.5 3.5s-.75 2.75-1.5 3.5" />
+      <path d="M7 11.5V14c0 2.5 2 4.5 5 6c3-1.5 5-3.5 5-6v-2.5" />
+      <path d="M11.5 6.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v4.5" />
+      <path d="M14.5 7.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v3" />
+      <path d="M17.5 9.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v2" />
+      <path d="M8.5 11V6c0-1-0.5-2-1.5-2S5.5 5 5.5 6v8c0 0.5 0 1.5 0.5 2.5" />
     </svg>
   );
 }
