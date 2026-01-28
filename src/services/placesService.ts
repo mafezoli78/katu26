@@ -33,8 +33,10 @@ export interface SearchPlacesParams {
 
 // Distance thresholds for UI decisions
 export const PROXIMITY_THRESHOLD_METERS = 30;  // Very close - offer direct entry
-export const INITIAL_SEARCH_RADIUS_METERS = 100; // Initial search radius
-export const EXPANDED_SEARCH_RADIUS_METERS = 500; // Expanded search if nothing found
+export const INITIAL_SEARCH_RADIUS_METERS = 300; // Initial search radius
+export const EXPANDED_SEARCH_RADIUS_METERS = 600; // Expanded search if few results
+export const MAX_SEARCH_RADIUS_METERS = 800; // Maximum search radius
+export const MIN_RESULTS_FOR_EXPANSION = 5; // Expand radius if fewer results than this
 
 // Abort controller for cancelling in-flight requests
 let currentSearchController: AbortController | null = null;
@@ -87,7 +89,7 @@ export const placesService = {
 
   /**
    * Search with text query (for name search).
-   * Uses Foursquare's text search capability.
+   * Uses Foursquare's text search capability with maximum radius.
    */
   async searchByName(params: {
     latitude: number;
@@ -97,11 +99,12 @@ export const placesService = {
   }): Promise<Place[]> {
     const { latitude, longitude, query, limit = 20 } = params;
 
+    // Search by name always uses max radius directly (no progressive expansion)
     const { data, error } = await supabase.functions.invoke('search-places', {
       body: { 
         latitude, 
         longitude, 
-        radius: EXPANDED_SEARCH_RADIUS_METERS,
+        radius: MAX_SEARCH_RADIUS_METERS,
         limit,
         query 
       },
