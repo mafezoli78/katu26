@@ -291,6 +291,7 @@ export function usePresence() {
   };
 
   // Activate presence using place_id (the new source of truth)
+  // Fluxo: 1) Encerrar presença anterior, 2) Expirar waves pendentes, 3) Criar nova presença
   const activatePresenceAtPlace = async (placeId: string, intentionId: string) => {
     if (!user) return { error: new Error('Not authenticated') };
 
@@ -298,29 +299,58 @@ export function usePresence() {
       return { error: new Error('place_id é obrigatório para criar presença') };
     }
 
+    console.log(`[Presence] 🔄 Switching to place: ${placeId}`);
+
     // Clear last end reason
     setLastEndReason(null);
 
-    // Deactivate any existing presence first (with cascade cleanup)
-    const existingPresence = currentPresence;
-    if (existingPresence?.place_id) {
-      await supabase.rpc('end_presence_cascade', {
-        p_user_id: user.id,
-        p_place_id: existingPresence.place_id
-      });
+    // Stop GPS monitoring from previous presence
+    stopGPSMonitoring();
+
+    // ============= STEP 1: Encerrar presença ativa anterior =============
+    console.log('[Presence] Step 1: Deactivating previous presence...');
+    const { error: deactivateError } = await supabase
+      .from('presence')
+      .update({ ativo: false })
+      .eq('user_id', user.id)
+      .eq('ativo', true);
+
+    if (deactivateError) {
+      console.error('[Presence] Error deactivating previous presence:', deactivateError);
+      // Continue anyway - might not have previous presence
+    } else {
+      console.log('[Presence] ✅ Previous presence deactivated');
     }
 
+    // ============= STEP 2: Expirar waves pendentes do local anterior =============
+    console.log('[Presence] Step 2: Expiring pending waves...');
+    const { error: wavesError, count: expiredCount } = await supabase
+      .from('waves')
+      .update({ status: 'expired' })
+      .eq('status', 'pending')
+      .or(`de_user_id.eq.${user.id},para_user_id.eq.${user.id}`);
+
+    if (wavesError) {
+      console.error('[Presence] Error expiring waves:', wavesError);
+      // Continue anyway - waves expiration is secondary
+    } else {
+      console.log(`[Presence] ✅ Expired ${expiredCount ?? 0} pending waves`);
+    }
+
+    // Delete old inactive presence records (cleanup)
     await supabase
       .from('presence')
       .delete()
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      .eq('ativo', false);
 
-    // Create new presence with place_id as source of truth
+    // ============= STEP 3: Criar nova presença =============
+    console.log('[Presence] Step 3: Creating new presence...');
     const { data, error } = await supabase
       .from('presence')
       .insert({
         user_id: user.id,
-        place_id: placeId,    // Fonte única de verdade
+        place_id: placeId,
         intention_id: intentionId,
         inicio: new Date().toISOString(),
         ultima_atividade: new Date().toISOString(),
@@ -329,29 +359,33 @@ export function usePresence() {
       .select()
       .single();
 
-    if (!error && data) {
-      setCurrentPresence(data);
-      setRemainingTime(PRESENCE_DURATION_MS);
-
-      // Fetch place details
-      const { data: placeData } = await supabase
-        .from('places')
-        .select('*')
-        .eq('id', placeId)
-        .maybeSingle();
-
-      if (placeData) {
-        setCurrentPlace(placeData as Place);
-        presenceLocationRef.current = {
-          lat: placeData.latitude,
-          lng: placeData.longitude,
-        };
-        // Start GPS monitoring
-        startGPSMonitoring();
-      }
+    if (error) {
+      console.error('[Presence] ❌ Error creating presence:', error);
+      return { error };
     }
 
-    return { error };
+    console.log(`[Presence] ✅ New presence created at place: ${placeId}`);
+    setCurrentPresence(data);
+    setRemainingTime(PRESENCE_DURATION_MS);
+
+    // Fetch place details
+    const { data: placeData } = await supabase
+      .from('places')
+      .select('*')
+      .eq('id', placeId)
+      .maybeSingle();
+
+    if (placeData) {
+      setCurrentPlace(placeData as Place);
+      presenceLocationRef.current = {
+        lat: placeData.latitude,
+        lng: placeData.longitude,
+      };
+      // Start GPS monitoring for new place
+      startGPSMonitoring();
+    }
+
+    return { error: null };
   };
 
   // Create a temporary place and activate presence
