@@ -19,6 +19,7 @@ export interface Place {
   criado_em: string;
   atualizado_em: string;
   distance_meters?: number;
+  is_temporary?: boolean;
 }
 
 export interface SearchPlacesParams {

@@ -1,19 +1,27 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
   MapPin, 
   Navigation, 
   Loader2, 
-  Coffee, 
   Users, 
   Clock, 
   Search, 
   Plus,
   Check,
-  X
+  X,
+  UtensilsCrossed,
+  Coffee,
+  Beer,
+  Music,
+  ShoppingBag,
+  Dumbbell,
+  Briefcase,
+  Building2,
+  Store,
+  Wifi
 } from 'lucide-react';
 import { Place, PROXIMITY_THRESHOLD_METERS } from '@/services/placesService';
 import { NearbyTemporaryPlace } from '@/hooks/usePresence';
@@ -28,6 +36,57 @@ interface PlaceSelectorProps {
   onSearchByName: (query: string) => void;
   searchingByName: boolean;
   presenceRadius: number;
+}
+
+// Map category to icon
+function getCategoryIcon(categoria?: string | null) {
+  if (!categoria) return Store;
+  
+  const cat = categoria.toLowerCase();
+  
+  if (cat.includes('bar') || cat.includes('pub') || cat.includes('cervej')) return Beer;
+  if (cat.includes('restaur') || cat.includes('food') || cat.includes('comida')) return UtensilsCrossed;
+  if (cat.includes('café') || cat.includes('coffee') || cat.includes('padaria') || cat.includes('bakery')) return Coffee;
+  if (cat.includes('music') || cat.includes('club') || cat.includes('balada') || cat.includes('show')) return Music;
+  if (cat.includes('shop') || cat.includes('loja') || cat.includes('mall')) return ShoppingBag;
+  if (cat.includes('gym') || cat.includes('academia') || cat.includes('fitness')) return Dumbbell;
+  if (cat.includes('office') || cat.includes('cowork') || cat.includes('escritório')) return Briefcase;
+  if (cat.includes('hotel') || cat.includes('building')) return Building2;
+  
+  return Store;
+}
+
+// Map category to background color class
+function getCategoryBgColor(categoria?: string | null) {
+  if (!categoria) return 'bg-muted';
+  
+  const cat = categoria.toLowerCase();
+  
+  if (cat.includes('bar') || cat.includes('pub') || cat.includes('cervej')) return 'bg-amber-100';
+  if (cat.includes('restaur') || cat.includes('food') || cat.includes('comida')) return 'bg-orange-100';
+  if (cat.includes('café') || cat.includes('coffee') || cat.includes('padaria') || cat.includes('bakery')) return 'bg-yellow-100';
+  if (cat.includes('music') || cat.includes('club') || cat.includes('balada') || cat.includes('show')) return 'bg-purple-100';
+  if (cat.includes('shop') || cat.includes('loja') || cat.includes('mall')) return 'bg-pink-100';
+  if (cat.includes('gym') || cat.includes('academia') || cat.includes('fitness')) return 'bg-green-100';
+  if (cat.includes('office') || cat.includes('cowork') || cat.includes('escritório')) return 'bg-blue-100';
+  
+  return 'bg-muted';
+}
+
+function getCategoryIconColor(categoria?: string | null) {
+  if (!categoria) return 'text-muted-foreground';
+  
+  const cat = categoria.toLowerCase();
+  
+  if (cat.includes('bar') || cat.includes('pub') || cat.includes('cervej')) return 'text-amber-600';
+  if (cat.includes('restaur') || cat.includes('food') || cat.includes('comida')) return 'text-orange-600';
+  if (cat.includes('café') || cat.includes('coffee') || cat.includes('padaria') || cat.includes('bakery')) return 'text-yellow-700';
+  if (cat.includes('music') || cat.includes('club') || cat.includes('balada') || cat.includes('show')) return 'text-purple-600';
+  if (cat.includes('shop') || cat.includes('loja') || cat.includes('mall')) return 'text-pink-600';
+  if (cat.includes('gym') || cat.includes('academia') || cat.includes('fitness')) return 'text-green-600';
+  if (cat.includes('office') || cat.includes('cowork') || cat.includes('escritório')) return 'text-blue-600';
+  
+  return 'text-muted-foreground';
 }
 
 export function PlaceSelector({
@@ -58,95 +117,98 @@ export function PlaceSelector({
 
   // Show direct suggestion for very close place
   if (closestPlace && !showList) {
+    const CategoryIcon = getCategoryIcon(closestPlace.categoria);
+    const bgColor = getCategoryBgColor(closestPlace.categoria);
+    const iconColor = getCategoryIconColor(closestPlace.categoria);
+    
     return (
-      <Card className="border-accent border-2">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2 text-accent">
-            <Navigation className="h-5 w-5" />
-            <CardTitle className="text-lg">Você está aqui?</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="p-4 bg-accent/10 rounded-lg">
-            <div className="flex items-start gap-3">
-              <Coffee className="h-6 w-6 text-accent mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold text-lg">{closestPlace.nome}</p>
-                {closestPlace.categoria && (
-                  <p className="text-sm text-muted-foreground">{closestPlace.categoria}</p>
-                )}
-                {closestPlace.endereco && (
-                  <p className="text-xs text-muted-foreground mt-1">{closestPlace.endereco}</p>
-                )}
-                <Badge variant="secondary" className="mt-2">
-                  <MapPin className="h-3 w-3 mr-1" />
+      <div className="space-y-4 animate-fade-in">
+        <div className="text-center mb-6">
+          <h2 className="text-2xl font-bold text-foreground">Você está aqui?</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            Encontramos um local muito próximo
+          </p>
+        </div>
+
+        <div className="bg-card rounded-2xl p-4 shadow-sm border border-border">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-xl ${bgColor} flex items-center justify-center flex-shrink-0`}>
+              <CategoryIcon className={`h-7 w-7 ${iconColor}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-lg truncate">{closestPlace.nome}</h3>
+              <p className="text-sm text-muted-foreground truncate">
+                {closestPlace.categoria || 'Local'}
+              </p>
+              <div className="flex items-center gap-1 mt-1">
+                <MapPin className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">
                   {closestPlace.distance_meters}m de você
-                </Badge>
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-3 mt-4">
             <Button
               variant="outline"
-              className="flex-1"
+              className="flex-1 h-11 rounded-xl"
               onClick={() => setShowList(true)}
             >
               <X className="h-4 w-4 mr-2" />
               Não é esse
             </Button>
             <Button
-              className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+              className="flex-1 h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
               onClick={() => onSelectPlace(closestPlace.id)}
             >
               <Check className="h-4 w-4 mr-2" />
-              Entrar
+              Tô aqui
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   // Show full list
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Navigation className="h-5 w-5" />
-          Locais próximos
-        </CardTitle>
-        <CardDescription>
+    <div className="space-y-4 animate-fade-in">
+      <div className="mb-2">
+        <h2 className="text-2xl font-bold text-foreground">Onde você está agora?</h2>
+        <p className="text-muted-foreground text-sm mt-1">
           Selecione onde você está (raio: {presenceRadius}m)
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="text-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-            <p className="text-sm text-muted-foreground mt-3">Buscando locais próximos...</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Temporary Places Section (prioritized) */}
-            {temporaryPlaces.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  Locais temporários ativos
-                </p>
-                {temporaryPlaces.map((place) => (
-                  <Button
-                    key={place.id}
-                    variant="outline"
-                    className="w-full justify-start h-auto py-3 touch-active border-accent bg-accent/5 hover:bg-accent/10"
-                    onClick={() => onSelectPlace(place.id)}
-                  >
-                    <MapPin className="h-5 w-5 mr-3 text-accent flex-shrink-0" />
-                    <div className="flex flex-col items-start text-left flex-1 min-w-0">
-                      <span className="truncate w-full">{place.nome}</span>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="secondary" className="text-xs">
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12">
+          <Loader2 className="h-10 w-10 animate-spin mx-auto text-katu-blue" />
+          <p className="text-sm text-muted-foreground mt-4">Buscando locais próximos...</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Temporary Places Section (prioritized) */}
+          {temporaryPlaces.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium px-1">
+                <Clock className="h-4 w-4 text-katu-green" />
+                <span>Locais temporários ativos</span>
+              </div>
+              {temporaryPlaces.map((place) => (
+                <div
+                  key={place.id}
+                  onClick={() => onSelectPlace(place.id)}
+                  className="bg-card rounded-xl p-3 shadow-sm border-2 border-katu-green/30 place-card cursor-pointer hover:border-katu-green/50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-katu-green/10 flex items-center justify-center flex-shrink-0">
+                      <Wifi className="h-6 w-6 text-katu-green" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold truncate">{place.nome}</h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <Badge variant="secondary" className="text-xs bg-katu-green/10 text-katu-green border-0">
                           <Users className="h-3 w-3 mr-1" />
                           {place.active_users} {place.active_users === 1 ? 'pessoa' : 'pessoas'}
                         </Badge>
@@ -155,92 +217,117 @@ export function PlaceSelector({
                         </span>
                       </div>
                     </div>
-                  </Button>
-                ))}
-              </div>
-            )}
-
-            {/* Foursquare Places Section */}
-            {places.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground font-medium">
-                  Estabelecimentos ({places.length})
-                </p>
-                {places.map((place) => (
-                  <Button
-                    key={place.id}
-                    variant="outline"
-                    className="w-full justify-start h-auto py-3 touch-active hover:bg-muted/50"
-                    onClick={() => onSelectPlace(place.id)}
-                  >
-                    <Coffee className="h-5 w-5 mr-3 text-muted-foreground flex-shrink-0" />
-                    <div className="flex flex-col items-start text-left flex-1 min-w-0">
-                      <span className="truncate w-full">{place.nome}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {place.categoria && (
-                          <span className="text-xs text-muted-foreground truncate max-w-[150px]">
-                            {place.categoria}
-                          </span>
-                        )}
-                        {place.distance_meters !== undefined && (
-                          <span className="text-xs text-muted-foreground">
-                            • {place.distance_meters}m
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            )}
-
-            {/* Empty state */}
-            {places.length === 0 && temporaryPlaces.length === 0 && (
-              <p className="text-muted-foreground text-center py-4 text-sm">
-                Nenhum local encontrado por perto
-              </p>
-            )}
-
-            {/* Search by name section */}
-            <div className="pt-4 border-t space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Não encontrou? Busque por nome:
-              </p>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Nome do local..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="flex-1"
-                />
-                <Button 
-                  variant="secondary" 
-                  size="icon"
-                  onClick={handleSearch}
-                  disabled={!searchQuery.trim() || searchingByName}
-                >
-                  {searchingByName ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Search className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+                    <Button 
+                      size="sm" 
+                      className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4"
+                    >
+                      Tô aqui
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
+          )}
 
-            {/* Create temporary place button */}
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={onCreateTemporary}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Criar local temporário
-            </Button>
+          {/* Foursquare Places Section */}
+          {places.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium px-1">
+                <Navigation className="h-4 w-4 text-katu-blue" />
+                <span>Estabelecimentos ({places.length})</span>
+              </div>
+              {places.map((place) => {
+                const CategoryIcon = getCategoryIcon(place.categoria);
+                const bgColor = getCategoryBgColor(place.categoria);
+                const iconColor = getCategoryIconColor(place.categoria);
+                
+                return (
+                  <div
+                    key={place.id}
+                    onClick={() => onSelectPlace(place.id)}
+                    className="bg-card rounded-xl p-3 shadow-sm border border-border place-card cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-xl ${bgColor} flex items-center justify-center flex-shrink-0`}>
+                        <CategoryIcon className={`h-6 w-6 ${iconColor}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold truncate">{place.nome}</h3>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+                            {place.categoria || 'Local'}
+                          </span>
+                          {place.distance_meters !== undefined && (
+                            <>
+                              <span className="text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">
+                                {place.distance_meters}m
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4"
+                      >
+                        Tô aqui
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {places.length === 0 && temporaryPlaces.length === 0 && (
+            <div className="text-center py-8 bg-card rounded-xl border border-border">
+              <MapPin className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">Nenhum local encontrado por perto</p>
+            </div>
+          )}
+
+          {/* Search by name section */}
+          <div className="pt-4 border-t border-border space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Não encontrou? Busque por nome:
+            </p>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Nome do local..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="flex-1 h-11 rounded-xl bg-card"
+              />
+              <Button 
+                variant="secondary" 
+                size="icon"
+                className="h-11 w-11 rounded-xl"
+                onClick={handleSearch}
+                disabled={!searchQuery.trim() || searchingByName}
+              >
+                {searchingByName ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Search className="h-5 w-5" />
+                )}
+              </Button>
+            </div>
           </div>
-        )}
-      </CardContent>
-    </Card>
+
+          {/* Create temporary place button */}
+          <Button
+            variant="outline"
+            className="w-full h-11 rounded-xl border-dashed border-2"
+            onClick={onCreateTemporary}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Criar local temporário
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

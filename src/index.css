@@ -6,6 +6,10 @@
 
 @layer base {
   :root {
+    /* Katu Brand Colors */
+    --katu-blue: 200 81% 47%; /* #1E8FD3 - Logo blue */
+    --katu-green: 165 52% 51%; /* #40C2A8 - Logo green */
+    
     /* Katu Color Palette */
     --background: 0 0% 97%; /* #F7F7F7 */
     --foreground: 0 0% 10%; /* #1A1A1A */
@@ -31,8 +35,8 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 88%;
-    --input: 0 0% 88%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
     --ring: 213 50% 25%;
 
     --radius: 0.75rem;
@@ -98,6 +102,17 @@
   }
 }
 
+/* Katu Gradient Backgrounds */
+@layer utilities {
+  .katu-gradient {
+    background: linear-gradient(180deg, hsl(213 50% 25%) 0%, hsl(165 52% 51%) 100%);
+  }
+  
+  .katu-gradient-horizontal {
+    background: linear-gradient(90deg, hsl(200 81% 47%) 0%, hsl(165 52% 51%) 100%);
+  }
+}
+
 /* Mobile-first layout */
 @layer utilities {
   .safe-area-inset-bottom {
@@ -137,7 +152,25 @@
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
+}
+
+/* Loading bar animation */
+@keyframes loadingProgress {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 70%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.loading-bar {
+  animation: loadingProgress 2s ease-in-out infinite;
 }
 
 /* Touch feedback */
@@ -145,5 +178,20 @@
   .touch-active:active {
     transform: scale(0.98);
     transition: transform 0.1s ease;
+  }
+}
+
+/* Place card hover effect */
+@layer utilities {
+  .place-card {
+    @apply transition-all duration-200;
+  }
+  
+  .place-card:hover {
+    @apply shadow-md;
+  }
+  
+  .place-card:active {
+    @apply scale-[0.99];
   }
 }

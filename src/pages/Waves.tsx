@@ -8,12 +8,35 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Hand, Eye, Check, X, MessageCircle, Loader2 } from 'lucide-react';
+import { Eye, Check, X, MessageCircle, Loader2, Inbox, Send } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { ToastAction } from '@/components/ui/toast';
+
+// Waving hand icon
+function WavingHand({ className }: { className?: string }) {
+  return (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M7 11.5V14c0 2.5 2 4.5 5 6c3-1.5 5-3.5 5-6v-2.5" />
+      <path d="M11.5 6.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v4.5" />
+      <path d="M14.5 7.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v3" />
+      <path d="M17.5 9.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v2" />
+      <path d="M8.5 11V6c0-1-0.5-2-1.5-2S5.5 5 5.5 6v8c0 0.5 0 1.5 0.5 2.5" />
+    </svg>
+  );
+}
 
 interface WaveWithProfile {
   id: string;
@@ -188,34 +211,55 @@ export default function Waves() {
   return (
     <MobileLayout>
       <div className="p-4 page-fade">
+        {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold">Acenos</h1>
+          <div className="flex items-center gap-2">
+            <WavingHand className="h-6 w-6 text-katu-blue" />
+            <h1 className="text-xl font-bold">Acenos</h1>
+          </div>
           {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" onClick={markAllAsRead}>
-              <Eye className="h-4 w-4 mr-1" />
+            <Button variant="ghost" size="sm" onClick={markAllAsRead} className="h-9 rounded-lg text-sm">
+              <Eye className="h-4 w-4 mr-1.5" />
               Marcar como lidos
             </Button>
           )}
         </div>
 
-        <Tabs defaultValue="received">
-          <TabsList className="w-full">
-            <TabsTrigger value="received" className="flex-1">
-              Recebidos {unreadCount > 0 && `(${unreadCount})`}
+        <Tabs defaultValue="received" className="w-full">
+          <TabsList className="w-full h-11 rounded-xl bg-muted/50 p-1">
+            <TabsTrigger 
+              value="received" 
+              className="flex-1 h-9 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
+            >
+              <Inbox className="h-4 w-4 mr-1.5" />
+              Recebidos {unreadCount > 0 && (
+                <Badge variant="secondary" className="ml-1.5 bg-accent text-accent-foreground h-5 min-w-5 text-xs">
+                  {unreadCount}
+                </Badge>
+              )}
             </TabsTrigger>
-            <TabsTrigger value="sent" className="flex-1">
+            <TabsTrigger 
+              value="sent" 
+              className="flex-1 h-9 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm"
+            >
+              <Send className="h-4 w-4 mr-1.5" />
               Enviados
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="received" className="mt-4">
             {loading ? (
-              <p className="text-center text-muted-foreground py-8">Carregando...</p>
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-katu-blue" />
+                <p className="text-muted-foreground text-sm mt-3">Carregando...</p>
+              </div>
             ) : receivedWithProfiles.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <Hand className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-muted-foreground">Nenhum aceno recebido ainda</p>
+              <Card className="border-0 shadow-sm">
+                <CardContent className="py-10 text-center">
+                  <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                    <WavingHand className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <p className="text-muted-foreground font-medium">Nenhum aceno recebido ainda</p>
                   <p className="text-sm text-muted-foreground mt-1">
                     Quando alguém acenar para você, aparecerá aqui
                   </p>
@@ -230,51 +274,49 @@ export default function Waves() {
                   return (
                     <Card 
                       key={wave.id} 
-                      className={!wave.visualizado ? 'border-accent' : ''}
+                      className={`border-0 shadow-sm overflow-hidden ${!wave.visualizado ? 'ring-2 ring-accent/50' : ''}`}
                       onClick={() => !wave.visualizado && markAsRead(wave.id)}
                     >
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3 mb-3">
-                          <Avatar>
+                          <Avatar className="h-12 w-12 ring-2 ring-background shadow">
                             <AvatarImage src={wave.profile.foto_url || undefined} />
-                            <AvatarFallback className="bg-secondary">
+                            <AvatarFallback className="bg-katu-blue text-white font-semibold">
                               {wave.profile.nome?.[0]?.toUpperCase() || '?'}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1">
-                            <p className="font-medium">Alguém acenou para você! 👋</p>
+                            <p className="font-semibold">Alguém acenou para você! 👋</p>
                             <p className="text-sm text-muted-foreground">
                               em {wave.location.nome} • {formatTime(wave.criado_em)}
                             </p>
                             {expiration && (
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-xs text-muted-foreground mt-0.5">
                                 {expiration}
                               </p>
                             )}
                           </div>
                           {!wave.visualizado && (
-                            <span className="h-2 w-2 rounded-full bg-accent" />
+                            <span className="h-3 w-3 rounded-full bg-accent animate-pulse" />
                           )}
                         </div>
                         
                         {/* Action buttons */}
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex gap-2">
                           <Button 
                             variant="outline" 
-                            size="sm" 
-                            className="flex-1"
+                            className="flex-1 h-10 rounded-xl"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleIgnoreWave(wave.id);
                             }}
                             disabled={isProcessing}
                           >
-                            <X className="h-4 w-4 mr-1" />
+                            <X className="h-4 w-4 mr-1.5" />
                             Ignorar
                           </Button>
                           <Button 
-                            size="sm" 
-                            className="flex-1"
+                            className="flex-1 h-10 rounded-xl bg-katu-green hover:bg-katu-green/90 text-white"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleAcceptWave(wave);
@@ -282,9 +324,9 @@ export default function Waves() {
                             disabled={isProcessing}
                           >
                             {isProcessing ? (
-                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
                             ) : (
-                              <Check className="h-4 w-4 mr-1" />
+                              <Check className="h-4 w-4 mr-1.5" />
                             )}
                             Aceitar
                           </Button>
@@ -299,12 +341,17 @@ export default function Waves() {
 
           <TabsContent value="sent" className="mt-4">
             {loading ? (
-              <p className="text-center text-muted-foreground py-8">Carregando...</p>
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-katu-blue" />
+                <p className="text-muted-foreground text-sm mt-3">Carregando...</p>
+              </div>
             ) : sentWithProfiles.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <Hand className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-muted-foreground">Você ainda não acenou para ninguém</p>
+              <Card className="border-0 shadow-sm">
+                <CardContent className="py-10 text-center">
+                  <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Send className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <p className="text-muted-foreground font-medium">Você ainda não acenou para ninguém</p>
                   <p className="text-sm text-muted-foreground mt-1">
                     Acene para pessoas próximas para iniciar uma conexão
                   </p>
@@ -316,28 +363,28 @@ export default function Waves() {
                   const expiration = formatExpiration(wave.expires_at);
                   
                   return (
-                    <Card key={wave.id}>
+                    <Card key={wave.id} className="border-0 shadow-sm">
                       <CardContent className="p-4 flex items-center gap-3">
-                        <Avatar>
+                        <Avatar className="h-12 w-12 ring-2 ring-background shadow">
                           <AvatarImage src={wave.profile.foto_url || undefined} />
-                          <AvatarFallback className="bg-secondary">
+                          <AvatarFallback className="bg-katu-blue text-white font-semibold">
                             {wave.profile.nome?.[0]?.toUpperCase() || '?'}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
-                          <p className="font-medium">Você acenou para {wave.profile.nome}</p>
+                          <p className="font-semibold">Você acenou para {wave.profile.nome}</p>
                           <p className="text-sm text-muted-foreground">
                             em {wave.location.nome} • {formatTime(wave.criado_em)}
                           </p>
                           {expiration && (
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-muted-foreground mt-0.5">
                               {expiration}
                             </p>
                           )}
                         </div>
-                        <span className="text-xs text-muted-foreground px-2 py-1 bg-secondary rounded">
+                        <Badge variant="secondary" className="bg-muted text-muted-foreground rounded-lg">
                           Aguardando
-                        </span>
+                        </Badge>
                       </CardContent>
                     </Card>
                   );

@@ -6,7 +6,8 @@ import { MobileLayout } from '@/components/layout/MobileLayout';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ConversationsList } from '@/components/chat/ConversationsList';
 import { toast } from '@/hooks/use-toast';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, MessageSquare } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 
 export default function Chat() {
   const { user } = useAuth();
@@ -86,8 +87,9 @@ export default function Chat() {
   return (
     <MobileLayout>
       <div className="p-4 page-fade">
+        {/* Header */}
         <div className="flex items-center gap-2 mb-4">
-          <MessageCircle className="h-5 w-5 text-primary" />
+          <MessageCircle className="h-5 w-5 text-katu-blue" />
           <h1 className="text-xl font-bold">Conversas</h1>
         </div>
 
@@ -95,10 +97,24 @@ export default function Chat() {
           Conversas ativas com pessoas no mesmo local
         </p>
 
-        <ConversationsList
-          conversations={activeConversations}
-          onSelectConversation={openChat}
-        />
+        {activeConversations.length === 0 ? (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="py-10 text-center">
+              <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                <MessageSquare className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <p className="text-muted-foreground font-medium">Nenhuma conversa ativa</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Quando alguém aceitar seu aceno, a conversa aparecerá aqui
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <ConversationsList
+            conversations={activeConversations}
+            onSelectConversation={openChat}
+          />
+        )}
       </div>
     </MobileLayout>
   );
