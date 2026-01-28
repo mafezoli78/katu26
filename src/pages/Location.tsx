@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresence, NearbyTemporaryPlace } from '@/hooks/usePresence';
@@ -91,16 +91,25 @@ export default function Location() {
     }
   }, [fetchNearbyTemporaryPlaces, toast]);
 
+  // Flag to prevent duplicate fetches
+  const hasFetchedRef = useRef(false);
+
   useEffect(() => {
     if (!user) {
       navigate('/auth', { replace: true });
       return;
     }
 
+    // Prevent duplicate fetches in strict mode
+    if (hasFetchedRef.current) return;
+
     // Request geolocation and auto-search
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          if (hasFetchedRef.current) return;
+          hasFetchedRef.current = true;
+
           const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
           console.log(`[Location] 📍 Got user coordinates: lat=${coords.lat}, lng=${coords.lng}`);
           setUserCoords(coords);

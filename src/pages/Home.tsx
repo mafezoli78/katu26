@@ -67,6 +67,13 @@ export default function Home() {
     }
   };
 
+  // Auto-redirect to location page if no active presence
+  useEffect(() => {
+    if (!presenceLoading && (!currentPresence || !currentPlace)) {
+      navigate('/location', { replace: true });
+    }
+  }, [presenceLoading, currentPresence, currentPlace, navigate]);
+
   if (presenceLoading) {
     return (
       <MobileLayout>
@@ -77,24 +84,12 @@ export default function Home() {
     );
   }
 
-  // No active presence - prompt to select location
+  // If still no presence after loading, show nothing (redirect will happen)
   if (!currentPresence || !currentPlace) {
     return (
       <MobileLayout>
-        <div className="p-4 space-y-6">
-          <div className="text-center py-12">
-            <MapPin className="h-16 w-16 text-primary mx-auto mb-4" />
-            <h1 className="text-2xl font-bold mb-2">Onde você está?</h1>
-            <p className="text-muted-foreground mb-6">
-              Confirme sua localização para ver quem está por perto
-            </p>
-            <Button 
-              onClick={() => navigate('/location')}
-              className="bg-accent text-accent-foreground hover:bg-accent/90"
-            >
-              Confirmar localização
-            </Button>
-          </div>
+        <div className="flex items-center justify-center min-h-[80vh]">
+          <div className="animate-pulse-soft text-muted-foreground">Carregando...</div>
         </div>
       </MobileLayout>
     );
