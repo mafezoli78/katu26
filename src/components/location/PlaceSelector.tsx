@@ -254,16 +254,15 @@ export function PlaceSelector({
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold truncate">{place.nome}</h3>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs text-muted-foreground truncate max-w-[120px]">
-                            {place.categoria || 'Local'}
-                          </span>
-                          {place.distance_meters !== undefined && (
-                            <>
-                              <span className="text-muted-foreground">•</span>
-                              <span className="text-xs text-muted-foreground">
-                                {place.distance_meters}m
-                              </span>
-                            </>
+                          {(place.active_users !== undefined && place.active_users > 0) ? (
+                            <Badge variant="secondary" className="text-xs bg-katu-green/10 text-katu-green border-0">
+                              <Users className="h-3 w-3 mr-1" />
+                              {place.active_users} {place.active_users === 1 ? 'pessoa' : 'pessoas'}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              Ninguém por aqui ainda
+                            </span>
                           )}
                         </div>
                       </div>

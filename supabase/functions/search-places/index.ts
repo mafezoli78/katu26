@@ -36,27 +36,37 @@ interface SearchParams {
   categories?: string; // comma-separated category IDs
 }
 
-// Foursquare category IDs for Katuu-compatible places
+// Foursquare category IDs for Katuu-compatible places (social venues with traffic potential)
 // Reference: https://docs.foursquare.com/data-products/docs/categories
 const KATUU_CATEGORY_IDS = [
-  // Nightlife
+  // Nightlife (high social flow)
   "13003", // Bar
   "13009", // Cocktail Bar
   "13017", // Lounge
   "13032", // Nightclub
   "13029", // Music Venue
   "13035", // Pub
+  "13005", // Beer Bar
+  "13006", // Beer Garden
+  "13038", // Wine Bar
   
-  // Dining
+  // Dining (medium-large venues only filtered by scale keywords)
   "13065", // Restaurant
   "13034", // Pizzeria
-  "13002", // Bakery
   "13031", // Café, Coffee, and Tea House
   "13145", // Coffee Shop
-  "13040", // Fast Food Restaurant
-  "13022", // Ice Cream Parlor
+  "13002", // Bakery (larger ones)
+  "13039", // Steakhouse
+  "13050", // Japanese Restaurant
+  "13064", // Italian Restaurant
+  "13046", // Brazilian Restaurant
+  "13047", // Brewery
+  "13058", // Gastropub
   
-  // Arts & Entertainment
+  // Shopping & Entertainment (high traffic)
+  "17114", // Shopping Mall
+  "17069", // Mall
+  "17000", // Retail (parent - for shopping centers)
   "10000", // Arts and Entertainment (parent category)
   "10001", // Arcade
   "10002", // Art Gallery
@@ -67,47 +77,105 @@ const KATUU_CATEGORY_IDS = [
   "10041", // Museum
   "10049", // Performing Arts Venue
   "10056", // Theater
+  "10004", // Bowling Alley
+  "10005", // Casino
+  "10043", // Amusement Park
   
-  // Outdoors & Recreation
-  "16000", // Landmarks and Outdoors (parent)
+  // Outdoors & Recreation (large public spaces)
   "16032", // Park
   "16020", // Garden
   "16019", // Plaza
   "16051", // Beach
+  "16026", // Harbor / Marina
   
-  // Sports & Fitness
+  // Sports & Fitness (social venues)
   "18021", // Gym / Fitness Center
   "18075", // Yoga Studio
   "18000", // Sports and Recreation (parent)
+  "18008", // Stadium
+  "18050", // Sports Club
   
-  // Education
+  // Education & Work (high concentration venues)
   "12058", // University
   "12013", // College
-  "12000", // Community and Government (parent for education)
-  
-  // Business
   "11046", // Coworking Space
-  "11000", // Business and Professional Services (parent)
+  "11035", // Convention Center
+  "11039", // Event Space
+  
+  // Hotels & Venues (social areas)
+  "19014", // Hotel
+  "19009", // Hotel Bar
+  "19025", // Rooftop Bar
 ];
 
-// Categories to explicitly exclude (safety check)
+// Categories to explicitly EXCLUDE (safety check - even if returned by API)
 const EXCLUDED_CATEGORY_KEYWORDS = [
-  "pharmacy", "farmácia",
+  // Medical
+  "pharmacy", "farmácia", "drogaria",
   "hospital", "medical", "clinic", "clínica",
-  "bank", "banco", "atm",
-  "gas station", "posto de gasolina",
-  "supermarket", "supermercado", "grocery",
-  "laundry", "lavanderia",
-  "car wash", "lava jato",
-  "hardware", "ferragem",
-  "auto repair", "oficina",
-  "dentist", "dentista",
-  "insurance", "seguro",
+  "doctor", "médico", "dentist", "dentista",
+  "optician", "ótica", "laboratory", "laboratório",
+  
+  // Services & Utilities
+  "bank", "banco", "atm", "caixa eletrônico",
+  "gas station", "posto de gasolina", "fuel",
+  "laundry", "lavanderia", "dry clean",
+  "car wash", "lava jato", "lava rápido",
+  "auto repair", "oficina", "mechanic", "mecânico",
+  "insurance", "seguro", "seguros",
+  "post office", "correios",
+  "police", "polícia", "fire station", "bombeiros",
+  
+  // Retail (small scale / non-social)
+  "supermarket", "supermercado", "grocery", "mercearia",
+  "hardware", "ferragem", "ferramenta",
+  "convenience", "conveniência",
+  "pet shop", "pet store",
+  "electronics store", "loja de eletrônicos",
+  "clothing store", "loja de roupa", // small retail
+  "shoe store", "sapataria",
+  "jewelry", "joalheria",
+  "florist", "floricultura",
+  "butcher", "açougue",
+  "fish market", "peixaria",
+  
+  // Residential & Generic
+  "neighborhood", "bairro", "vizinhança",
+  "residential", "residencial",
+  "apartment", "apartamento",
+  "office", "escritório", // generic offices (not coworking)
+  "building", "prédio", "edifício",
+  
+  // Religious (private)
+  "church", "igreja", "temple", "templo", "mosque", "mesquita",
+];
+
+// Keywords that indicate small-scale venues (low social flow potential)
+const SMALL_SCALE_KEYWORDS = [
+  "kiosk", "quiosque",
+  "stand", "barraca",
+  "cart", "carrinho",
+  "trailer",
+  "food truck", // too small
+  "lanchonete", "snack bar", // usually very small
+  "banca", "newsstand",
+  "booth",
+  "stall",
 ];
 
 function isCategoryExcluded(categoryName: string): boolean {
   const lowerName = categoryName.toLowerCase();
   return EXCLUDED_CATEGORY_KEYWORDS.some(keyword => lowerName.includes(keyword));
+}
+
+function isSmallScaleVenue(place: FoursquarePlace): boolean {
+  const name = place.name.toLowerCase();
+  const category = place.categories?.[0]?.name?.toLowerCase() || '';
+  
+  // Check name and category against small scale keywords
+  return SMALL_SCALE_KEYWORDS.some(keyword => 
+    name.includes(keyword) || category.includes(keyword)
+  );
 }
 
 Deno.serve(async (req) => {
@@ -183,14 +251,23 @@ Deno.serve(async (req) => {
         const fsqData = await fsqResponse.json();
         const rawPlaces = fsqData.results || [];
         
-        // Filter out excluded categories (safety net)
+        // Filter out excluded categories AND small-scale venues
         places = rawPlaces.filter((place: FoursquarePlace) => {
-          if (!place.categories?.length) return true;
-          return !place.categories.some(cat => isCategoryExcluded(cat.name));
+          // Exclude by category keywords
+          if (place.categories?.length) {
+            if (place.categories.some(cat => isCategoryExcluded(cat.name))) {
+              return false;
+            }
+          }
+          // Exclude small-scale venues
+          if (isSmallScaleVenue(place)) {
+            return false;
+          }
+          return true;
         });
         
         foursquareSuccess = true;
-        console.log(`[search-places] ✅ Foursquare returned ${rawPlaces.length} places, ${places.length} after filtering`);
+        console.log(`[search-places] ✅ Foursquare returned ${rawPlaces.length} places, ${places.length} after category+scale filtering`);
       }
     } catch (apiError) {
       console.error(`[search-places] ⚠️ Foursquare API call failed:`, apiError);
@@ -263,8 +340,8 @@ Deno.serve(async (req) => {
       throw dbError;
     }
 
-    // Calculate distance for each place and sort by distance
-    const placesWithDistance = (dbPlaces || []).map(place => {
+    // Calculate distance and fetch active user count for each place
+    const placesWithDistancePromises = (dbPlaces || []).map(async (place) => {
       const R = 6371000; // Earth radius in meters
       const dLat = (place.latitude - latitude) * Math.PI / 180;
       const dLon = (place.longitude - longitude) * Math.PI / 180;
@@ -274,10 +351,24 @@ Deno.serve(async (req) => {
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       const distance = R * c;
       
-      return { ...place, distance_meters: Math.round(distance) };
-    }).sort((a, b) => a.distance_meters - b.distance_meters);
+      // Fetch active presence count for this place
+      const { count } = await supabase
+        .from("presence")
+        .select("*", { count: "exact", head: true })
+        .eq("place_id", place.id)
+        .eq("ativo", true);
+      
+      return { 
+        ...place, 
+        distance_meters: Math.round(distance),
+        active_users: count || 0
+      };
+    });
+    
+    const placesWithDistance = (await Promise.all(placesWithDistancePromises))
+      .sort((a, b) => a.distance_meters - b.distance_meters);
 
-    console.log(`[search-places] 📤 Returning ${placesWithDistance.length} places from database (sorted by distance)`);
+    console.log(`[search-places] 📤 Returning ${placesWithDistance.length} places from database (with active_users count)`);
 
     return new Response(
       JSON.stringify({ 
