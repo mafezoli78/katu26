@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { calculateDistanceMeters } from '@/config/presence';
 
 export interface Place {
   id: string;
@@ -17,14 +18,21 @@ export interface Place {
   origem: string;
   criado_em: string;
   atualizado_em: string;
+  distance_meters?: number;
 }
 
 export interface SearchPlacesParams {
   latitude: number;
   longitude: number;
   radius?: number;
+  limit?: number;
   query?: string;
 }
+
+// Distance thresholds for UI decisions
+export const PROXIMITY_THRESHOLD_METERS = 30;  // Very close - offer direct entry
+export const INITIAL_SEARCH_RADIUS_METERS = 100; // Initial search radius
+export const EXPANDED_SEARCH_RADIUS_METERS = 500; // Expanded search if nothing found
 
 /**
  * Service layer for places management.
@@ -32,13 +40,21 @@ export interface SearchPlacesParams {
  */
 export const placesService = {
   /**
-   * Search for places near a location.
+   * Search for places near a location with optimized parameters for Katuu.
    * Calls the edge function which fetches from provider and caches in database.
-   * Always returns data from the local database.
+   * Always returns data from the local database, sorted by distance.
    */
   async searchNearby(params: SearchPlacesParams): Promise<Place[]> {
+    const { 
+      latitude, 
+      longitude, 
+      radius = INITIAL_SEARCH_RADIUS_METERS, 
+      limit = 20,
+      query 
+    } = params;
+
     const { data, error } = await supabase.functions.invoke('search-places', {
-      body: params,
+      body: { latitude, longitude, radius, limit, query },
     });
 
     if (error) {
@@ -50,8 +66,57 @@ export const placesService = {
   },
 
   /**
+   * Search with text query (for name search).
+   * Uses Foursquare's text search capability.
+   */
+  async searchByName(params: {
+    latitude: number;
+    longitude: number;
+    query: string;
+    limit?: number;
+  }): Promise<Place[]> {
+    const { latitude, longitude, query, limit = 20 } = params;
+
+    const { data, error } = await supabase.functions.invoke('search-places', {
+      body: { 
+        latitude, 
+        longitude, 
+        radius: EXPANDED_SEARCH_RADIUS_METERS,
+        limit,
+        query 
+      },
+    });
+
+    if (error) {
+      console.error('Error searching places by name:', error);
+      throw new Error('Failed to search places by name');
+    }
+
+    return data.places || [];
+  },
+
+  /**
+   * Get the closest place to a location.
+   * Returns null if no place is within the proximity threshold.
+   */
+  async getClosestPlace(latitude: number, longitude: number): Promise<Place | null> {
+    const places = await this.searchNearby({
+      latitude,
+      longitude,
+      radius: PROXIMITY_THRESHOLD_METERS,
+      limit: 1,
+    });
+
+    if (places.length > 0 && places[0].distance_meters !== undefined) {
+      return places[0].distance_meters <= PROXIMITY_THRESHOLD_METERS ? places[0] : null;
+    }
+
+    return null;
+  },
+
+  /**
    * Get cached places from database without calling external API.
-   * Useful for displaying previously fetched places.
+   * Adds distance calculation and sorts by distance.
    */
   async getCachedPlaces(params: {
     latitude: number;
@@ -68,6 +133,7 @@ export const placesService = {
       .from('places')
       .select('*')
       .eq('ativo', true)
+      .eq('is_temporary', false)
       .gte('latitude', latitude - latDelta)
       .lte('latitude', latitude + latDelta)
       .gte('longitude', longitude - lngDelta)
@@ -78,7 +144,16 @@ export const placesService = {
       throw error;
     }
 
-    return (data as Place[]) || [];
+    // Add distance and sort
+    const placesWithDistance = (data as Place[]).map(place => ({
+      ...place,
+      distance_meters: Math.round(calculateDistanceMeters(
+        latitude, longitude,
+        place.latitude, place.longitude
+      ))
+    })).sort((a, b) => (a.distance_meters || 0) - (b.distance_meters || 0));
+
+    return placesWithDistance;
   },
 
   /**
@@ -90,17 +165,14 @@ export const placesService = {
       .select('*')
       .eq('id', id)
       .eq('ativo', true)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return null; // Not found
-      }
       console.error('Error fetching place:', error);
       throw error;
     }
 
-    return data as Place;
+    return data as Place | null;
   },
 
   /**
