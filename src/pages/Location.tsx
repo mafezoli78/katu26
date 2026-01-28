@@ -9,8 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, MapPin } from 'lucide-react';
-import logoKatu from '@/assets/logo-katu-branco.png';
+import { Loader2, Users, MapPin, ArrowLeft } from 'lucide-react';
 import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS_METERS, EXPANDED_SEARCH_RADIUS_METERS } from '@/services/placesService';
 import { PlaceSelector } from '@/components/location/PlaceSelector';
 
@@ -263,19 +262,12 @@ export default function Location() {
   return (
     <MobileLayout>
       <div className="p-4 space-y-4 page-fade">
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-2">
-          <MapPin className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-bold">Onde você está?</h1>
-        </div>
         {/* Detecting location */}
         {step === 'detecting' && (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Loader2 className="h-12 w-12 text-primary mx-auto mb-4 animate-spin" />
-              <p className="text-muted-foreground">Detectando sua localização...</p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center py-16">
+            <Loader2 className="h-12 w-12 text-katu-blue mx-auto mb-4 animate-spin" />
+            <p className="text-muted-foreground">Detectando sua localização...</p>
+          </div>
         )}
 
         {/* Select location - New optimized component */}
@@ -295,139 +287,173 @@ export default function Location() {
 
         {/* Create temporary place */}
         {step === 'create_temp' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Criar local temporário</CardTitle>
-              <CardDescription>
-                Crie um local para encontros espontâneos. Expira após 6 horas.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3 mb-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-9 w-9 rounded-xl"
+                onClick={() => setStep('select')}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
               <div>
-                <Label htmlFor="placeName">Nome do local</Label>
-                <Input
-                  id="placeName"
-                  placeholder="Ex: Festa do João, Churrasco no parque..."
-                  value={newPlaceName}
-                  onChange={(e) => setNewPlaceName(e.target.value)}
-                />
+                <h2 className="text-xl font-bold">Criar local temporário</h2>
+                <p className="text-sm text-muted-foreground">
+                  Expira após 6 horas sem atividade
+                </p>
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep('select')} className="flex-1">
-                  Voltar
-                </Button>
+            </div>
+            
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-6 space-y-4">
+                <div>
+                  <Label htmlFor="placeName" className="text-sm font-medium">Nome do local</Label>
+                  <Input
+                    id="placeName"
+                    placeholder="Ex: Festa do João, Churrasco no parque..."
+                    value={newPlaceName}
+                    onChange={(e) => setNewPlaceName(e.target.value)}
+                    className="mt-2 h-11 rounded-xl"
+                  />
+                </div>
                 <Button 
                   onClick={handleCreateTemporaryPlace}
                   disabled={!newPlaceName.trim()}
-                  className="flex-1 bg-accent text-accent-foreground"
+                  className="w-full h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
                 >
                   Continuar
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {/* Confirm use of existing temporary place */}
         {step === 'confirm_temp' && nearbyTempToConfirm && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Local temporário próximo</CardTitle>
-              <CardDescription>
-                Já existe um local temporário muito próximo. Deseja entrar nele?
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 bg-accent/10 rounded-lg border border-accent/30">
-                <p className="font-medium">{nearbyTempToConfirm.nome}</p>
-                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                  <Users className="h-4 w-4" />
-                  <span>{nearbyTempToConfirm.active_users} {nearbyTempToConfirm.active_users === 1 ? 'pessoa' : 'pessoas'}</span>
-                  <span>•</span>
-                  <span>{Math.round(nearbyTempToConfirm.distance_meters)}m de você</span>
+          <div className="space-y-4 animate-fade-in">
+            <div className="text-center mb-4">
+              <h2 className="text-xl font-bold">Local temporário próximo</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Já existe um local muito próximo. Deseja entrar?
+              </p>
+            </div>
+            
+            <Card className="border-2 border-katu-green/30">
+              <CardContent className="pt-6">
+                <div className="p-4 bg-katu-green/10 rounded-xl">
+                  <p className="font-semibold text-lg">{nearbyTempToConfirm.nome}</p>
+                  <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                    <Users className="h-4 w-4" />
+                    <span>{nearbyTempToConfirm.active_users} {nearbyTempToConfirm.active_users === 1 ? 'pessoa' : 'pessoas'}</span>
+                    <span>•</span>
+                    <span>{Math.round(nearbyTempToConfirm.distance_meters)}m de você</span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex flex-col gap-2">
-                <Button 
-                  onClick={handleConfirmUseExistingTemp}
-                  className="bg-accent text-accent-foreground"
-                >
-                  Entrar neste local
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={handleConfirmCreateNewTemp}
-                >
-                  Criar outro local mesmo assim
-                </Button>
-                <Button 
-                  variant="ghost"
-                  onClick={() => {
-                    setNearbyTempToConfirm(null);
-                    setStep('select');
-                  }}
-                >
-                  Voltar
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="flex flex-col gap-2 mt-4">
+                  <Button 
+                    onClick={handleConfirmUseExistingTemp}
+                    className="h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
+                  >
+                    Entrar neste local
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="h-11 rounded-xl"
+                    onClick={handleConfirmCreateNewTemp}
+                  >
+                    Criar outro local mesmo assim
+                  </Button>
+                  <Button 
+                    variant="ghost"
+                    className="h-11 rounded-xl"
+                    onClick={() => {
+                      setNearbyTempToConfirm(null);
+                      setStep('select');
+                    }}
+                  >
+                    Voltar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {/* Select intention */}
         {step === 'intention' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Qual sua intenção?</CardTitle>
-              <CardDescription>
-                Isso ajuda a conectar você com pessoas compatíveis
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <RadioGroup
-                value={selectedIntentionId || undefined}
-                onValueChange={setSelectedIntentionId}
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3 mb-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-9 w-9 rounded-xl"
+                onClick={() => {
+                  if (nearbyTempToConfirm) {
+                    setStep('confirm_temp');
+                  } else if (newPlaceName.trim()) {
+                    setStep('create_temp');
+                  } else {
+                    setStep('select');
+                  }
+                }}
               >
-                {intentions.map((intention) => (
-                  <div key={intention.id} className="flex items-center space-x-3 p-3 border rounded-lg">
-                    <RadioGroupItem value={intention.id} id={intention.id} />
-                    <Label htmlFor={intention.id} className="flex-1 cursor-pointer">
-                      <span className="font-medium">{intention.nome}</span>
-                      {intention.descricao && (
-                        <p className="text-sm text-muted-foreground">{intention.descricao}</p>
-                      )}
-                    </Label>
-                  </div>
-                ))}
-              </RadioGroup>
-
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    if (nearbyTempToConfirm) {
-                      setStep('confirm_temp');
-                    } else if (newPlaceName.trim()) {
-                      setStep('create_temp');
-                    } else {
-                      setStep('select');
-                    }
-                  }} 
-                  className="flex-1"
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h2 className="text-xl font-bold">Qual sua intenção?</h2>
+                <p className="text-sm text-muted-foreground">
+                  Isso ajuda a conectar com pessoas compatíveis
+                </p>
+              </div>
+            </div>
+            
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-6 space-y-4">
+                <RadioGroup
+                  value={selectedIntentionId || undefined}
+                  onValueChange={setSelectedIntentionId}
+                  className="space-y-2"
                 >
-                  Voltar
-                </Button>
+                  {intentions.map((intention) => (
+                    <div 
+                      key={intention.id} 
+                      className={`flex items-center space-x-3 p-4 border rounded-xl transition-all cursor-pointer ${
+                        selectedIntentionId === intention.id 
+                          ? 'border-katu-blue bg-katu-blue/5' 
+                          : 'border-border hover:border-muted-foreground/30'
+                      }`}
+                      onClick={() => setSelectedIntentionId(intention.id)}
+                    >
+                      <RadioGroupItem value={intention.id} id={intention.id} />
+                      <Label htmlFor={intention.id} className="flex-1 cursor-pointer">
+                        <span className="font-medium">{intention.nome}</span>
+                        {intention.descricao && (
+                          <p className="text-sm text-muted-foreground">{intention.descricao}</p>
+                        )}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+
                 <Button 
                   onClick={handleActivatePresence}
                   disabled={!selectedIntentionId || activating}
-                  className="flex-1 bg-accent text-accent-foreground"
+                  className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
                 >
-                  {activating ? 'Ativando...' : 'Estou aqui!'}
+                  {activating ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Ativando...
+                    </>
+                  ) : (
+                    'Estou aqui!'
+                  )}
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
     </MobileLayout>

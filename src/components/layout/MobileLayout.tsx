@@ -1,15 +1,18 @@
 import { ReactNode } from 'react';
 import { BottomNav } from './BottomNav';
+import { AppHeader } from './AppHeader';
 
 interface MobileLayoutProps {
   children: ReactNode;
   showNav?: boolean;
+  showHeader?: boolean;
 }
 
-export function MobileLayout({ children, showNav = true }: MobileLayoutProps) {
+export function MobileLayout({ children, showNav = true, showHeader = true }: MobileLayoutProps) {
   return (
-    <div className="mobile-container bg-background min-h-screen">
-      <main className={showNav ? 'pb-20' : ''}>
+    <div className="mobile-container bg-background min-h-screen flex flex-col">
+      {showHeader && <AppHeader />}
+      <main className={`flex-1 ${showNav ? 'pb-20' : ''}`}>
         {children}
       </main>
       {showNav && <BottomNav />}

@@ -57,8 +57,10 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        // Katu specific semantic colors
+        // Katu Brand Colors (for logo and special uses)
         katu: {
+          blue: "hsl(var(--katu-blue))", // #1E8FD3
+          green: "hsl(var(--katu-green))", // #40C2A8
           primary: "hsl(213 50% 25%)", // #1F3A5F
           secondary: "hsl(150 16% 49%)", // #6B8E7F
           accent: "hsl(27 88% 67%)", // #F4A261
@@ -107,6 +109,10 @@ export default {
           "60%": { transform: "rotate(0deg)" },
           "100%": { transform: "rotate(0deg)" },
         },
+        "bounce-subtle": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-4px)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -116,6 +122,11 @@ export default {
         "slide-up": "slide-up 0.4s ease-out",
         "pulse-soft": "pulse-soft 2s ease-in-out infinite",
         wave: "wave 0.8s ease-in-out",
+        "bounce-subtle": "bounce-subtle 1s ease-in-out infinite",
+      },
+      boxShadow: {
+        "card-hover": "0 8px 30px -10px hsl(var(--primary) / 0.15)",
+        "nav": "0 -4px 20px -5px hsl(var(--foreground) / 0.08)",
       },
     },
   },
