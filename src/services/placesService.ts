@@ -20,6 +20,7 @@ export interface Place {
   atualizado_em: string;
   distance_meters?: number;
   is_temporary?: boolean;
+  active_users?: number;
 }
 
 export interface SearchPlacesParams {
