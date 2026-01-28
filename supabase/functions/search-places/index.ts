@@ -36,45 +36,73 @@ interface SearchParams {
   categories?: string; // comma-separated category IDs
 }
 
-// Foursquare category IDs - EXCLUSIVELY social/public places for Katuu
+// Foursquare category IDs for Katuu-compatible places
 // Reference: https://docs.foursquare.com/data-products/docs/categories
 const KATUU_CATEGORY_IDS = [
-  "4d4b7105d754a06376d81259", // Nightlife Spot (parent - includes bars, clubs, lounges)
-  "4bf58dd8d48988d116941735", // Bar
-  "4bf58dd8d48988d11f941735", // Nightclub
-  "4bf58dd8d48988d121941735", // Lounge
-  "5032792091d4171f4202c5b0", // Shopping Mall
-  "4bf58dd8d48988d175941735", // Gym / Fitness Center
-  "4bf58dd8d48988d1c1941735", // Mexican Restaurant (using as Restaurant proxy)
-  "4bf58dd8d48988d16d941735", // Café
-  "4bf58dd8d48988d1e0931735", // Coffee Shop
-  "4e38bcc692d1c19738b9fea9", // Event Space
-  "4bf58dd8d48988d1f1931735", // General Entertainment
-  "4bf58dd8d48988d182941735", // Music Venue
-  "4bf58dd8d48988d1e5931735", // Concert Hall
-  "4bf58dd8d48988d17f941735", // Movie Theater
-  "4bf58dd8d48988d163941735", // Park
-  "4bf58dd8d48988d1e7941735", // Plaza
-  "4d4b7105d754a06374d81259", // Food (parent - restaurants, cafés)
-  "4bf58dd8d48988d14e941735", // American Restaurant
-  "4bf58dd8d48988d16c941735", // Burger Joint
-  "52e81612bcbc57f1066b79f1", // Brewery
-  "4bf58dd8d48988d155941735", // Gastropub
-  "4bf58dd8d48988d1db931735", // Speakeasy
-  "56aa371be4b08b9a8d573529", // Pub
+  // Nightlife
+  "13003", // Bar
+  "13009", // Cocktail Bar
+  "13017", // Lounge
+  "13032", // Nightclub
+  "13029", // Music Venue
+  "13035", // Pub
+  
+  // Dining
+  "13065", // Restaurant
+  "13034", // Pizzeria
+  "13002", // Bakery
+  "13031", // Café, Coffee, and Tea House
+  "13145", // Coffee Shop
+  "13040", // Fast Food Restaurant
+  "13022", // Ice Cream Parlor
+  
+  // Arts & Entertainment
+  "10000", // Arts and Entertainment (parent category)
+  "10001", // Arcade
+  "10002", // Art Gallery
+  "10024", // Concert Hall
+  "10027", // Cultural Center
+  "10032", // Live Music Venue
+  "10039", // Movie Theater
+  "10041", // Museum
+  "10049", // Performing Arts Venue
+  "10056", // Theater
+  
+  // Outdoors & Recreation
+  "16000", // Landmarks and Outdoors (parent)
+  "16032", // Park
+  "16020", // Garden
+  "16019", // Plaza
+  "16051", // Beach
+  
+  // Sports & Fitness
+  "18021", // Gym / Fitness Center
+  "18075", // Yoga Studio
+  "18000", // Sports and Recreation (parent)
+  
+  // Education
+  "12058", // University
+  "12013", // College
+  "12000", // Community and Government (parent for education)
+  
+  // Business
+  "11046", // Coworking Space
+  "11000", // Business and Professional Services (parent)
 ];
 
-// Keywords to EXCLUDE from results (post-filter safety)
+// Categories to explicitly exclude (safety check)
 const EXCLUDED_CATEGORY_KEYWORDS = [
-  "doctor", "doctor's office", "médico", "consultório",
-  "pharmacy", "farmácia", "drugstore", "drogaria",
-  "store", "loja", "shop", "retail",
-  "neighborhood", "bairro", "vizinhança",
+  "pharmacy", "farmácia",
   "hospital", "medical", "clinic", "clínica",
   "bank", "banco", "atm",
+  "gas station", "posto de gasolina",
+  "supermarket", "supermercado", "grocery",
+  "laundry", "lavanderia",
+  "car wash", "lava jato",
+  "hardware", "ferragem",
+  "auto repair", "oficina",
   "dentist", "dentista",
-  "office", "escritório",
-  "supermarket", "supermercado", "grocery", "mercado",
+  "insurance", "seguro",
 ];
 
 function isCategoryExcluded(categoryName: string): boolean {
@@ -102,7 +130,7 @@ Deno.serve(async (req) => {
     const { 
       latitude, 
       longitude, 
-      radius = 500, // Default to 500m for wider coverage
+      radius = 100, // Default to 100m for initial search
       limit = 20,   // Default to 20 results
       query,
       categories 
@@ -142,7 +170,6 @@ Deno.serve(async (req) => {
         headers: {
           "Authorization": `Bearer ${FOURSQUARE_API_KEY}`,
           "Accept": "application/json",
-          "Accept-Language": "pt-BR", // Request Portuguese (Brazil) names
           "X-Places-Api-Version": "2025-06-17",
         },
       });
