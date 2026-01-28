@@ -11,7 +11,7 @@ export interface Wave {
   place_id: string | null;
   criado_em: string;
   visualizado: boolean;
-  status: 'pending' | 'accepted';
+  status: 'pending' | 'accepted' | 'expired';
   expires_at: string | null;
   accepted_by: string | null;
 }
@@ -36,11 +36,15 @@ export function useWaves() {
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Filter valid waves (pending and not expired)
+  // Filter valid waves (pending and not expired by time or status)
   const filterValidWaves = useCallback((waves: Wave[]) => {
     const now = new Date();
     return waves.filter(wave => {
+      // Exclude waves with expired status (set when user changes location)
+      if (wave.status === 'expired') return false;
+      // Only include pending waves
       if (wave.status !== 'pending') return false;
+      // Check time-based expiration
       if (wave.expires_at && new Date(wave.expires_at) <= now) return false;
       return true;
     });

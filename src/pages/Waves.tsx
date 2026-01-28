@@ -20,7 +20,7 @@ interface WaveWithProfile {
   criado_em: string;
   visualizado: boolean;
   expires_at: string | null;
-  status: 'pending' | 'accepted';
+  status: 'pending' | 'accepted' | 'expired';
   de_user_id: string;
   profile: {
     nome: string | null;
