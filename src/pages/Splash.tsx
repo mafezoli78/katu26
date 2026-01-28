@@ -54,17 +54,13 @@ export default function Splash() {
         className="w-56 h-auto mb-12 animate-fade-in drop-shadow-lg"
       />
       
-      {/* Icon with pin effect */}
+      {/* Icon - transparent background */}
       <div className="relative mb-8">
-        <div className="w-32 h-32 bg-white/90 rounded-full flex items-center justify-center shadow-xl">
-          <img 
-            src={iconKatuu} 
-            alt="" 
-            className="w-20 h-20 object-contain"
-          />
-        </div>
-        {/* Pin shadow/base */}
-        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-16 h-3 bg-white/30 rounded-full blur-sm" />
+        <img 
+          src={iconKatuu} 
+          alt="" 
+          className="w-32 h-32 object-contain drop-shadow-2xl"
+        />
       </div>
 
       {/* Tagline */}
