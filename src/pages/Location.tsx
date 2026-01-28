@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresence, NearbyTemporaryPlace } from '@/hooks/usePresence';
@@ -8,10 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { MapPin, Plus, Navigation, Loader2, ArrowLeft, Coffee, Users, Clock } from 'lucide-react';
+import { Loader2, ArrowLeft, Users, Clock } from 'lucide-react';
 import logoKatu from '@/assets/logo-katu-branco.png';
-import { Place } from '@/services/placesService';
-import { Badge } from '@/components/ui/badge';
+import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS_METERS, EXPANDED_SEARCH_RADIUS_METERS } from '@/services/placesService';
+import { PlaceSelector } from '@/components/location/PlaceSelector';
 
 export default function Location() {
   const { user } = useAuth();
@@ -19,14 +19,11 @@ export default function Location() {
   const { toast } = useToast();
   const { 
     intentions, 
-    nearbyPlaces,
     nearbyTemporaryPlaces,
-    fetchNearbyPlaces,
     fetchNearbyTemporaryPlaces,
     activatePresenceAtPlace,
     createTemporaryPlace,
     loading,
-    placesLoading,
     presenceRadiusMeters,
   } = usePresence();
 
@@ -37,6 +34,62 @@ export default function Location() {
   const [newPlaceName, setNewPlaceName] = useState('');
   const [activating, setActivating] = useState(false);
   const [nearbyTempToConfirm, setNearbyTempToConfirm] = useState<NearbyTemporaryPlace | null>(null);
+  
+  // New states for optimized flow
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [closestPlace, setClosestPlace] = useState<Place | null>(null);
+  const [searchingByName, setSearchingByName] = useState(false);
+
+  // Auto-search for places when coordinates are obtained
+  const fetchPlaces = useCallback(async (lat: number, lng: number) => {
+    setPlacesLoading(true);
+    
+    try {
+      // Fetch temporary places first
+      await fetchNearbyTemporaryPlaces(lat, lng);
+      
+      // Initial search with small radius
+      let results = await placesService.searchNearby({
+        latitude: lat,
+        longitude: lng,
+        radius: INITIAL_SEARCH_RADIUS_METERS,
+        limit: 20,
+      });
+
+      // If no results, expand search radius
+      if (results.length === 0) {
+        console.log('[Location] No places found in initial radius, expanding search...');
+        results = await placesService.searchNearby({
+          latitude: lat,
+          longitude: lng,
+          radius: EXPANDED_SEARCH_RADIUS_METERS,
+          limit: 20,
+        });
+      }
+
+      setPlaces(results);
+
+      // Check for very close place
+      if (results.length > 0 && results[0].distance_meters !== undefined) {
+        if (results[0].distance_meters <= PROXIMITY_THRESHOLD_METERS) {
+          setClosestPlace(results[0]);
+          console.log(`[Location] Found very close place: ${results[0].nome} (${results[0].distance_meters}m)`);
+        }
+      }
+
+      console.log(`[Location] Found ${results.length} places`);
+    } catch (error) {
+      console.error('[Location] Error fetching places:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao buscar locais',
+        description: 'Tente novamente',
+      });
+    } finally {
+      setPlacesLoading(false);
+    }
+  }, [fetchNearbyTemporaryPlaces, toast]);
 
   useEffect(() => {
     if (!user) {
@@ -44,7 +97,7 @@ export default function Location() {
       return;
     }
 
-    // Request geolocation
+    // Request geolocation and auto-search
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -52,8 +105,8 @@ export default function Location() {
           console.log(`[Location] 📍 Got user coordinates: lat=${coords.lat}, lng=${coords.lng}`);
           setUserCoords(coords);
           
-          // Fetch places (Foursquare + temporary places)
-          fetchNearbyPlaces(coords.lat, coords.lng);
+          // Auto-fetch places immediately
+          fetchPlaces(coords.lat, coords.lng);
           
           setStep('select');
         },
@@ -65,17 +118,47 @@ export default function Location() {
             description: 'Por favor, permita o acesso à localização'
           });
           setStep('select');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 30000,
         }
       );
     } else {
       toast({ variant: 'destructive', title: 'Geolocalização não suportada' });
       setStep('select');
     }
-  }, [user]);
+  }, [user, navigate, toast, fetchPlaces]);
 
   const handleSelectPlace = (placeId: string) => {
     setSelectedPlaceId(placeId);
     setStep('intention');
+  };
+
+  const handleSearchByName = async (query: string) => {
+    if (!userCoords) return;
+    
+    setSearchingByName(true);
+    try {
+      const results = await placesService.searchByName({
+        latitude: userCoords.lat,
+        longitude: userCoords.lng,
+        query,
+        limit: 20,
+      });
+      setPlaces(results);
+      setClosestPlace(null); // Reset closest place suggestion
+    } catch (error) {
+      console.error('[Location] Error searching by name:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Erro na busca',
+        description: 'Tente novamente',
+      });
+    } finally {
+      setSearchingByName(false);
+    }
   };
 
   const handleCreateTemporaryPlace = async () => {
@@ -175,103 +258,19 @@ export default function Location() {
           </Card>
         )}
 
-        {/* Select location */}
+        {/* Select location - New optimized component */}
         {step === 'select' && (
-          <>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Navigation className="h-5 w-5" />
-                  Locais próximos
-                </CardTitle>
-                <CardDescription>
-                  Selecione onde você está (raio: {presenceRadiusMeters}m)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading || placesLoading ? (
-                  <div className="text-center py-4">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                    <p className="text-sm text-muted-foreground mt-2">Buscando locais próximos...</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Temporary Places Section (prioritized) */}
-                    {nearbyTemporaryPlaces.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
-                          <Clock className="h-4 w-4" />
-                          Locais temporários ativos
-                        </p>
-                        {nearbyTemporaryPlaces.map((place) => (
-                          <Button
-                            key={place.id}
-                            variant="outline"
-                            className="w-full justify-start h-auto py-3 touch-active border-accent bg-accent/5"
-                            onClick={() => handleSelectPlace(place.id)}
-                          >
-                            <MapPin className="h-5 w-5 mr-3 text-accent" />
-                            <div className="flex flex-col items-start text-left flex-1">
-                              <span>{place.nome}</span>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant="secondary" className="text-xs">
-                                  <Users className="h-3 w-3 mr-1" />
-                                  {place.active_users} {place.active_users === 1 ? 'pessoa' : 'pessoas'}
-                                </Badge>
-                                <span className="text-xs text-muted-foreground">
-                                  {Math.round(place.distance_meters)}m
-                                </span>
-                              </div>
-                            </div>
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Foursquare Places Section */}
-                    {nearbyPlaces.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground font-medium">
-                          Estabelecimentos próximos ({nearbyPlaces.length})
-                        </p>
-                        {nearbyPlaces.slice(0, 10).map((place) => (
-                          <Button
-                            key={place.id}
-                            variant="outline"
-                            className="w-full justify-start h-auto py-3 touch-active"
-                            onClick={() => handleSelectPlace(place.id)}
-                          >
-                            <Coffee className="h-5 w-5 mr-3 text-muted-foreground" />
-                            <div className="flex flex-col items-start text-left">
-                              <span>{place.nome}</span>
-                              {place.categoria && (
-                                <span className="text-xs text-muted-foreground">{place.categoria}</span>
-                              )}
-                            </div>
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-
-                    {nearbyPlaces.length === 0 && nearbyTemporaryPlaces.length === 0 && userCoords && (
-                      <p className="text-muted-foreground text-center py-4 text-sm">
-                        Nenhum local encontrado por perto
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <Button
-                  variant="ghost"
-                  className="w-full mt-4"
-                  onClick={() => setStep('create_temp')}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Criar local temporário
-                </Button>
-              </CardContent>
-            </Card>
-          </>
+          <PlaceSelector
+            loading={loading || placesLoading}
+            places={places}
+            temporaryPlaces={nearbyTemporaryPlaces}
+            closestPlace={closestPlace}
+            onSelectPlace={handleSelectPlace}
+            onCreateTemporary={() => setStep('create_temp')}
+            onSearchByName={handleSearchByName}
+            searchingByName={searchingByName}
+            presenceRadius={presenceRadiusMeters}
+          />
         )}
 
         {/* Create temporary place */}
