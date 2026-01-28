@@ -289,6 +289,7 @@ const ALLOWED_CATEGORY_IDS = new Set([
 
   // ===== SHOPPING MALLS =====
   "4bf58dd8d48988d1fd941735", // Mall
+  "4bf58dd8d48988d1f5931735", // Shopping Center / Shopping Mall
   "52e816a6bcbc57f1066b7a54", // Warehouse Store (may be mall-like)
 
   // ===== COWORKING & WORKSPACES =====
