@@ -5,7 +5,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Foursquare Places API response format (new endpoint - 2025 version)
+// Foursquare Places API response format
+interface FoursquareCategory {
+  fsq_category_id: string;
+  name: string;
+  short_name?: string;
+}
+
 interface FoursquarePlace {
   fsq_place_id: string;
   name: string;
@@ -19,11 +25,7 @@ interface FoursquarePlace {
     postcode?: string;
     formatted_address?: string;
   };
-  categories: Array<{
-    fsq_category_id: string;
-    name: string;
-    short_name?: string;
-  }>;
+  categories: FoursquareCategory[];
   distance?: number;
 }
 
@@ -33,150 +35,334 @@ interface SearchParams {
   radius?: number;
   limit?: number;
   query?: string;
-  categories?: string; // comma-separated category IDs
 }
 
-// Foursquare category IDs for Katuu-compatible places (social venues with traffic potential)
-// Reference: https://docs.foursquare.com/data-products/docs/categories
-const KATUU_CATEGORY_IDS = [
-  // Nightlife (high social flow)
-  "13003", // Bar
-  "13009", // Cocktail Bar
-  "13017", // Lounge
-  "13032", // Nightclub
-  "13029", // Music Venue
-  "13035", // Pub
-  "13005", // Beer Bar
-  "13006", // Beer Garden
-  "13038", // Wine Bar
-  
-  // Dining (medium-large venues only filtered by scale keywords)
-  "13065", // Restaurant
-  "13034", // Pizzeria
-  "13031", // Café, Coffee, and Tea House
-  "13145", // Coffee Shop
-  "13002", // Bakery (larger ones)
-  "13039", // Steakhouse
-  "13050", // Japanese Restaurant
-  "13064", // Italian Restaurant
-  "13046", // Brazilian Restaurant
-  "13047", // Brewery
-  "13058", // Gastropub
-  
-  // Shopping & Entertainment (high traffic)
-  "17114", // Shopping Mall
-  "17069", // Mall
-  "17000", // Retail (parent - for shopping centers)
-  "10000", // Arts and Entertainment (parent category)
-  "10001", // Arcade
-  "10002", // Art Gallery
-  "10024", // Concert Hall
-  "10027", // Cultural Center
-  "10032", // Live Music Venue
-  "10039", // Movie Theater
-  "10041", // Museum
-  "10049", // Performing Arts Venue
-  "10056", // Theater
-  "10004", // Bowling Alley
-  "10005", // Casino
-  "10043", // Amusement Park
-  
-  // Outdoors & Recreation (large public spaces)
-  "16032", // Park
-  "16020", // Garden
-  "16019", // Plaza
-  "16051", // Beach
-  "16026", // Harbor / Marina
-  
-  // Sports & Fitness (social venues)
-  "18021", // Gym / Fitness Center
-  "18075", // Yoga Studio
-  "18000", // Sports and Recreation (parent)
-  "18008", // Stadium
-  "18050", // Sports Club
-  
-  // Education & Work (high concentration venues)
-  "12058", // University
-  "12013", // College
-  "11046", // Coworking Space
-  "11035", // Convention Center
-  "11039", // Event Space
-  
-  // Hotels & Venues (social areas)
-  "19014", // Hotel
-  "19009", // Hotel Bar
-  "19025", // Rooftop Bar
+// =============================================================================
+// CURADORIA DE CATEGORIAS KATUU
+// =============================================================================
+// Regra-mãe: O Katuu só exibe lugares onde é socialmente aceitável e esperado
+// interagir com desconhecidos. Locais funcionais, de passagem, privados ou
+// sensíveis devem ser excluídos.
+// 
+// Foursquare uses legacy hexadecimal category IDs (e.g., 4bf58dd8d48988d16a941735)
+// This curadoria uses category NAMES for filtering since the hex IDs are not
+// easily mappable to a hierarchy.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// ALLOWED CATEGORY PATTERNS (by name - case insensitive)
+// -----------------------------------------------------------------------------
+
+// Arts & Entertainment - Cultural and entertainment venues
+const ARTS_ENTERTAINMENT_ALLOWED = [
+  "arts and entertainment", // Parent category
+  "movie theater", "cinema", "multiplex",
+  "museum", "art museum", "history museum", "science museum",
+  "theater", "teatro", "performing arts",
+  "concert hall", "music venue", "live music venue", "jazz club", "rock club",
+  "art gallery", "gallery",
+  "comedy club", "stand up",
+  "stadium", "arena",
+  "amusement park", "theme park",
+  "zoo", "aquarium",
+  "cultural center", "centro cultural",
+  "opera house", "ópera",
+  "bowling alley", "bowling",
+  "arcade", "game arcade",
+  "planetarium",
+  "casino",
+  "escape room",
+  "laser tag",
+  "pool hall", "billiards",
 ];
 
-// Categories to explicitly EXCLUDE (safety check - even if returned by API)
-const EXCLUDED_CATEGORY_KEYWORDS = [
-  // Medical
-  "pharmacy", "farmácia", "drogaria",
-  "hospital", "medical", "clinic", "clínica",
-  "doctor", "médico", "dentist", "dentista",
-  "optician", "ótica", "laboratory", "laboratório",
+// Events - Public events and festivals (all allowed)
+const EVENTS_ALLOWED = [
+  "festival", "music festival",
+  "conference", "convention",
+  "parade", "desfile",
+  "fair", "feira",
+  "outdoor event",
+];
+
+// Nightlife - Bars, clubs, lounges (core Katuu category)
+const NIGHTLIFE_ALLOWED = [
+  "bar", "pub", "irish pub",
+  "cocktail bar", "cocktail lounge",
+  "lounge", "whisky bar", "whiskey bar", "wine bar",
+  "nightclub", "club", "boate", "balada",
+  "karaoke", "karaoke bar",
+  "jazz bar", "blues club",
+  "beer bar", "beer garden", "cervejaria",
+  "brewery", "brewpub",
+  "speakeasy",
+  "hotel bar", "rooftop bar", "pool bar",
+  "gay bar", "lgbtq bar",
+  "sports bar",
+  "tiki bar",
+  "dive bar",
+];
+
+// Dining - Restaurants with permanence (excludes fast food, takeaway)
+const DINING_ALLOWED = [
+  "restaurant", "restaurante",
+  "steakhouse", "churrascaria", "brazilian steakhouse", "bbq", "bbq joint", "barbecue", "churrasquinho",
+  "bistro", "bistrô",
+  "gastropub", "gastro pub",
+  "fine dining",
+  "brasserie",
+  "café", "cafe", "coffee shop", "cafeteria",
+  "tea room", "tea house", "casa de chá",
+  "winery", "vinícola", "wine tasting",
+  "distillery", "destilaria",
+  "trattoria",
+  "tapas bar", "tapas restaurant",
+  "sushi restaurant", "sushi bar", "japanese restaurant",
+  "italian restaurant", "pizzeria",
+  "mexican restaurant", "taqueria",
+  "indian restaurant", "thai restaurant", "chinese restaurant",
+  "korean restaurant", "korean bbq",
+  "french restaurant", "mediterranean restaurant",
+  "greek restaurant", "spanish restaurant",
+  "american restaurant", "diner",
+  "seafood restaurant", "fish restaurant",
+  "vegetarian restaurant", "vegan restaurant",
+  "brunch", "breakfast spot",
+  "buffet", "buffet restaurant",
+  "food hall",
+];
+
+// Outdoors - Parks, plazas, beaches (social public spaces)
+const OUTDOORS_ALLOWED = [
+  "park", "parque", "urban park", "national park", "state park",
+  "plaza", "praça", "square", "town square",
+  "beach", "praia",
+  "botanical garden", "jardim botânico", "garden",
+  "scenic lookout", "viewpoint", "mirante",
+  "marina", "yacht club", "harbor",
+  "waterfront", "pier", "boardwalk",
+  "dog park",
+  "playground",
+  "recreation center",
+];
+
+// Education - Universities and colleges (main campus social areas)
+const EDUCATION_ALLOWED = [
+  "university", "universidade", "faculdade",
+  "college", "campus",
+  "student center", "centro acadêmico",
+];
+
+// Shopping - Only large social venues
+const SHOPPING_ALLOWED = [
+  "shopping mall", "mall", "shopping center", "shopping centre",
+];
+
+// Combine all allowed patterns
+const ALL_ALLOWED_PATTERNS = [
+  ...ARTS_ENTERTAINMENT_ALLOWED,
+  ...EVENTS_ALLOWED,
+  ...NIGHTLIFE_ALLOWED,
+  ...DINING_ALLOWED,
+  ...OUTDOORS_ALLOWED,
+  ...EDUCATION_ALLOWED,
+  ...SHOPPING_ALLOWED,
+];
+
+// -----------------------------------------------------------------------------
+// EXCLUDED CATEGORY PATTERNS (always block, even if parent is allowed)
+// -----------------------------------------------------------------------------
+
+const ALWAYS_EXCLUDED = [
+  // Fast food & Quick service
+  "fast food", "fast-food", "fastfood",
+  "food truck", "food stand", "food cart",
+  "food court",
+  "snack bar", "snack place", "lanchonete",
+  "kiosk", "quiosque",
+  "newsstand", "banca",
   
-  // Services & Utilities
-  "bank", "banco", "atm", "caixa eletrônico",
+  // Bakeries & Sweets (quick consumption)
+  "bakery", "padaria", "panificadora",
+  "bagel shop", "bagel",
+  "cupcake", "donut shop", "donuts",
+  "dessert shop", "dessert", "sobremesa",
+  "frozen yogurt", "froyo",
+  "ice cream", "sorveteria", "gelato",
+  "waffle", "crepe",
+  "candy store", "candy shop", "doces",
+  "chocolate shop",
+  
+  // Retail/Specialty (not dining)
+  "deli", "delicatessen",
+  "farmers market", "feira livre",
+  "gourmet shop", "gourmet store",
+  "grocery", "grocery store", "supermercado", "supermarket",
+  "butcher", "açougue",
+  "fish market", "peixaria",
+  "cheese shop", "queijaria",
+  "health food store", "organic store",
+  "liquor store", "off licence", "wine shop",
+  "market", "mercado",
+  "convenience store", "conveniência",
+  "juice bar", "juice shop", "smoothie",
+  
+  // Health & Medical
+  "hospital", "clinic", "clínica",
+  "doctor", "médico", "consultório",
+  "dentist", "dentista",
+  "pharmacy", "farmácia", "drogaria",
+  "optician", "ótica",
+  "laboratory", "laboratório",
+  "medical center", "health center",
+  "urgent care", "emergency room",
+  "veterinary", "vet", "veterinário",
+  
+  // Government & Services
+  "city hall", "prefeitura",
+  "courthouse", "tribunal", "fórum",
+  "police", "polícia", "delegacia",
+  "fire station", "bombeiros",
+  "post office", "correios",
+  "embassy", "consulate", "consulado",
+  "government", "governo",
+  "dmv", "detran",
+  
+  // Religion
+  "church", "igreja",
+  "mosque", "mesquita",
+  "synagogue", "sinagoga",
+  "temple", "templo",
+  "cathedral", "catedral",
+  "chapel", "capela",
+  "religious", "spiritual center",
+  
+  // Schools (not university)
+  "elementary school", "escola",
+  "high school", "colégio",
+  "middle school",
+  "preschool", "daycare", "creche",
+  "kindergarten",
+  "school", // generic school
+  
+  // Residential & Private
+  "residential", "residencial",
+  "apartment", "apartamento",
+  "home", "house", "casa",
+  "building", "prédio", "edifício",
+  "condo", "condomínio",
+  "assisted living", "nursing home",
+  "funeral", "funerária", "cemitério", "cemetery",
+  
+  // Transport & Infrastructure
+  "bus stop", "ponto de ônibus",
+  "train station", "estação",
+  "subway", "metrô", "metro station",
+  "airport", "aeroporto",
+  "bus station", "rodoviária",
+  "taxi stand", "ponto de táxi",
   "gas station", "posto de gasolina", "fuel",
+  "parking", "estacionamento",
+  "toll", "pedágio",
+  "bridge", "ponte",
+  "tunnel", "túnel",
+  "highway", "rodovia",
+  
+  // Business & Services
+  "bank", "banco", "atm", "caixa eletrônico",
+  "office", "escritório",
+  "coworking", "co-working",
   "laundry", "lavanderia", "dry clean",
   "car wash", "lava jato", "lava rápido",
   "auto repair", "oficina", "mechanic", "mecânico",
-  "insurance", "seguro", "seguros",
-  "post office", "correios",
-  "police", "polícia", "fire station", "bombeiros",
+  "insurance", "seguro",
+  "real estate", "imobiliária",
+  "lawyer", "advogado", "law firm",
+  "accountant", "contador",
+  "storage", "self storage",
+  "printing", "gráfica",
   
-  // Retail (small scale / non-social)
-  "supermarket", "supermercado", "grocery", "mercearia",
-  "hardware", "ferragem", "ferramenta",
-  "convenience", "conveniência",
-  "pet shop", "pet store",
-  "electronics store", "loja de eletrônicos",
-  "clothing store", "loja de roupa", // small retail
+  // Retail (non-social)
+  "store", "loja", "shop",
+  "clothing store", "roupa",
   "shoe store", "sapataria",
   "jewelry", "joalheria",
+  "electronics", "eletrônicos",
+  "hardware", "ferragem",
+  "furniture", "móveis",
+  "pet shop", "pet store",
   "florist", "floricultura",
-  "butcher", "açougue",
-  "fish market", "peixaria",
+  "bookstore", "livraria",
+  "toy store", "brinquedos",
+  "sporting goods", "esportes",
+  "beauty salon", "salão", "hair salon", "cabeleireiro",
+  "spa", "nail salon",
+  "gym", "academia", "fitness", "crossfit",
+  "yoga studio", "pilates",
   
-  // Residential & Generic
+  // Generic/Transit locations
   "neighborhood", "bairro", "vizinhança",
-  "residential", "residencial",
-  "apartment", "apartamento",
-  "office", "escritório", // generic offices (not coworking)
-  "building", "prédio", "edifício",
+  "city", "cidade",
+  "street", "rua",
+  "intersection", "cruzamento",
+  "trail", "trilha",
+  "forest", "floresta",
+  "lake", "lago",
+  "river", "rio",
+  "mountain", "montanha",
+  "camping", "campground", "campsite",
+  "public art", "arte pública",
+  "monument", "monumento",
+  "memorial",
+  "historic site", "patrimônio histórico",
+  "landmark",
   
-  // Religious (private)
-  "church", "igreja", "temple", "templo", "mosque", "mesquita",
+  // Hotels (sleeping, not social)
+  "hotel", "motel", "hostel", "pousada", "inn",
+  "bed and breakfast", "airbnb",
+  
+  // Library
+  "library", "biblioteca",
 ];
 
-// Keywords that indicate small-scale venues (low social flow potential)
-const SMALL_SCALE_KEYWORDS = [
-  "kiosk", "quiosque",
-  "stand", "barraca",
-  "cart", "carrinho",
-  "trailer",
-  "food truck", // too small
-  "lanchonete", "snack bar", // usually very small
-  "banca", "newsstand",
-  "booth",
-  "stall",
-];
+// -----------------------------------------------------------------------------
+// FILTERING LOGIC
+// -----------------------------------------------------------------------------
 
-function isCategoryExcluded(categoryName: string): boolean {
-  const lowerName = categoryName.toLowerCase();
-  return EXCLUDED_CATEGORY_KEYWORDS.some(keyword => lowerName.includes(keyword));
+function normalizeText(text: string): string {
+  return text.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, ""); // Remove accents
 }
 
-function isSmallScaleVenue(place: FoursquarePlace): boolean {
-  const name = place.name.toLowerCase();
-  const category = place.categories?.[0]?.name?.toLowerCase() || '';
+function matchesPattern(text: string, patterns: string[]): boolean {
+  const normalized = normalizeText(text);
+  return patterns.some(pattern => normalized.includes(normalizeText(pattern)));
+}
+
+function shouldIncludePlace(place: FoursquarePlace): boolean {
+  if (!place.categories || place.categories.length === 0) {
+    return false;
+  }
   
-  // Check name and category against small scale keywords
-  return SMALL_SCALE_KEYWORDS.some(keyword => 
-    name.includes(keyword) || category.includes(keyword)
-  );
+  // Check all categories of the place
+  for (const category of place.categories) {
+    const categoryName = category.name || "";
+    
+    // First check exclusions - if ANY category is excluded, reject the place
+    if (matchesPattern(categoryName, ALWAYS_EXCLUDED)) {
+      return false;
+    }
+  }
+  
+  // Check if primary category matches allowed patterns
+  const primaryCategory = place.categories[0].name || "";
+  return matchesPattern(primaryCategory, ALL_ALLOWED_PATTERNS);
 }
+
+// -----------------------------------------------------------------------------
+// MAIN HANDLER
+// -----------------------------------------------------------------------------
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -198,10 +384,9 @@ Deno.serve(async (req) => {
     const { 
       latitude, 
       longitude, 
-      radius = 100, // Default to 100m for initial search
-      limit = 20,   // Default to 20 results
+      radius = 100,
+      limit = 20,
       query,
-      categories 
     }: SearchParams = await req.json();
 
     if (!latitude || !longitude) {
@@ -211,27 +396,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[search-places] 📍 Received coordinates: lat=${latitude}, lng=${longitude}, radius=${radius}m, limit=${limit}`);
+    console.log(`[search-places] 📍 Searching: lat=${latitude}, lng=${longitude}, radius=${radius}m`);
 
     let places: FoursquarePlace[] = [];
     let foursquareSuccess = false;
 
-    // Build Foursquare API URL with category filters
+    // Build Foursquare API URL - request more places to account for filtering
     const fsqUrl = new URL("https://places-api.foursquare.com/places/search");
     fsqUrl.searchParams.set("ll", `${latitude},${longitude}`);
     fsqUrl.searchParams.set("radius", String(radius));
-    fsqUrl.searchParams.set("limit", String(limit));
-    fsqUrl.searchParams.set("sort", "distance"); // Always sort by distance
-    
-    // Apply category filter (use provided categories or default Katuu categories)
-    const categoryFilter = categories || KATUU_CATEGORY_IDS.join(",");
-    fsqUrl.searchParams.set("categories", categoryFilter);
+    fsqUrl.searchParams.set("limit", String(Math.min(limit * 3, 50))); // Request 3x to account for filtering
+    fsqUrl.searchParams.set("sort", "distance");
     
     if (query) {
       fsqUrl.searchParams.set("query", query);
     }
 
-    console.log(`[search-places] 🔍 Calling Foursquare API with categories filter`);
+    console.log(`[search-places] 🔍 Calling Foursquare API`);
     
     try {
       const fsqResponse = await fetch(fsqUrl.toString(), {
@@ -242,35 +423,38 @@ Deno.serve(async (req) => {
         },
       });
 
-      console.log(`[search-places] 📡 Foursquare response status: ${fsqResponse.status}`);
+      console.log(`[search-places] 📡 Foursquare response: ${fsqResponse.status}`);
 
       if (!fsqResponse.ok) {
         const errorText = await fsqResponse.text();
-        console.error(`[search-places] ❌ Foursquare API error: ${fsqResponse.status} - ${errorText}`);
+        console.error(`[search-places] ❌ Foursquare error: ${fsqResponse.status} - ${errorText}`);
       } else {
         const fsqData = await fsqResponse.json();
         const rawPlaces = fsqData.results || [];
         
-        // Filter out excluded categories AND small-scale venues
-        places = rawPlaces.filter((place: FoursquarePlace) => {
-          // Exclude by category keywords
-          if (place.categories?.length) {
-            if (place.categories.some(cat => isCategoryExcluded(cat.name))) {
-              return false;
-            }
-          }
-          // Exclude small-scale venues
-          if (isSmallScaleVenue(place)) {
-            return false;
-          }
-          return true;
-        });
+        // Apply category-based filtering using name patterns
+        places = rawPlaces.filter((place: FoursquarePlace) => shouldIncludePlace(place));
         
         foursquareSuccess = true;
-        console.log(`[search-places] ✅ Foursquare returned ${rawPlaces.length} places, ${places.length} after category+scale filtering`);
+        console.log(`[search-places] ✅ Foursquare: ${rawPlaces.length} raw → ${places.length} after curadoria`);
+        
+        // Log what was filtered for debugging
+        const filtered = rawPlaces.filter((p: FoursquarePlace) => !shouldIncludePlace(p));
+        if (filtered.length > 0) {
+          console.log(`[search-places] 🚫 Filtered: ${filtered.slice(0, 5).map((p: FoursquarePlace) => 
+            `${p.name} (${p.categories?.[0]?.name || 'no-cat'})`
+          ).join(', ')}${filtered.length > 5 ? ` +${filtered.length - 5} more` : ''}`);
+        }
+        
+        // Log what was included for debugging
+        if (places.length > 0) {
+          console.log(`[search-places] ✅ Included: ${places.slice(0, 5).map((p: FoursquarePlace) => 
+            `${p.name} (${p.categories?.[0]?.name || 'no-cat'})`
+          ).join(', ')}${places.length > 5 ? ` +${places.length - 5} more` : ''}`);
+        }
       }
     } catch (apiError) {
-      console.error(`[search-places] ⚠️ Foursquare API call failed:`, apiError);
+      console.error(`[search-places] ⚠️ Foursquare API failed:`, apiError);
     }
 
     // Persist places to database if we got results
@@ -279,7 +463,7 @@ Deno.serve(async (req) => {
       
       const upsertPromises = places.map(async (place) => {
         if (!place.fsq_place_id) {
-          console.warn(`[search-places] ⚠️ Place missing fsq_place_id:`, place.name);
+          console.warn(`[search-places] ⚠️ Missing fsq_place_id:`, place.name);
           return null;
         }
 
@@ -307,7 +491,7 @@ Deno.serve(async (req) => {
           });
 
         if (error) {
-          console.error(`[search-places] ⚠️ Error upserting place ${place.fsq_place_id}:`, error.message);
+          console.error(`[search-places] ⚠️ Upsert error ${place.fsq_place_id}:`, error.message);
         } else {
           persistedCount++;
         }
@@ -316,19 +500,18 @@ Deno.serve(async (req) => {
       });
 
       await Promise.all(upsertPromises);
-      console.log(`[search-places] 💾 Persisted ${persistedCount}/${places.length} places to database`);
+      console.log(`[search-places] 💾 Persisted ${persistedCount}/${places.length} places`);
     }
 
-    // Return places from database (ensures consistent data format)
-    // For better proximity results, query database with distance calculation
-    const latDelta = (radius * 2) / 111000; // Convert radius to degrees
+    // Return places from database with distance and active user count
+    const latDelta = (radius * 2) / 111000;
     const lngDelta = (radius * 2) / (111000 * Math.cos(latitude * Math.PI / 180));
 
     const { data: dbPlaces, error: dbError } = await supabase
       .from("places")
       .select("*")
       .eq("ativo", true)
-      .eq("is_temporary", false) // Only return Foursquare places here
+      .eq("is_temporary", false)
       .gte("latitude", latitude - latDelta)
       .lte("latitude", latitude + latDelta)
       .gte("longitude", longitude - lngDelta)
@@ -336,13 +519,28 @@ Deno.serve(async (req) => {
       .limit(limit);
 
     if (dbError) {
-      console.error("[search-places] ❌ Database query error:", dbError);
+      console.error("[search-places] ❌ DB error:", dbError);
       throw dbError;
     }
 
-    // Calculate distance and fetch active user count for each place
-    const placesWithDistancePromises = (dbPlaces || []).map(async (place) => {
-      const R = 6371000; // Earth radius in meters
+    // Filter database results using the same curadoria logic
+    const filteredDbPlaces = (dbPlaces || []).filter(place => {
+      // If dados_brutos has categories, use the same filter
+      const rawData = place.dados_brutos as FoursquarePlace | null;
+      if (rawData && rawData.categories && rawData.categories.length > 0) {
+        return shouldIncludePlace(rawData);
+      }
+      // If no raw data, check categoria field against allowed patterns
+      if (place.categoria) {
+        return matchesPattern(place.categoria, ALL_ALLOWED_PATTERNS) && 
+               !matchesPattern(place.categoria, ALWAYS_EXCLUDED);
+      }
+      return false;
+    });
+
+    // Calculate distance and fetch active user count
+    const placesWithDistancePromises = filteredDbPlaces.map(async (place) => {
+      const R = 6371000;
       const dLat = (place.latitude - latitude) * Math.PI / 180;
       const dLon = (place.longitude - longitude) * Math.PI / 180;
       const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -351,7 +549,6 @@ Deno.serve(async (req) => {
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       const distance = R * c;
       
-      // Fetch active presence count for this place
       const { count } = await supabase
         .from("presence")
         .select("*", { count: "exact", head: true })
@@ -368,7 +565,7 @@ Deno.serve(async (req) => {
     const placesWithDistance = (await Promise.all(placesWithDistancePromises))
       .sort((a, b) => a.distance_meters - b.distance_meters);
 
-    console.log(`[search-places] 📤 Returning ${placesWithDistance.length} places from database (with active_users count)`);
+    console.log(`[search-places] 📤 Returning ${placesWithDistance.length} places (from ${dbPlaces?.length || 0} in DB)`);
 
     return new Response(
       JSON.stringify({ 
