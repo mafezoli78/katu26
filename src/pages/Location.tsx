@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresence, NearbyTemporaryPlace } from '@/hooks/usePresence';
+import { MobileLayout } from '@/components/layout/MobileLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft, Users, Clock } from 'lucide-react';
+import { Loader2, Users, MapPin } from 'lucide-react';
 import logoKatu from '@/assets/logo-katu-branco.png';
 import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS_METERS, EXPANDED_SEARCH_RADIUS_METERS } from '@/services/placesService';
 import { PlaceSelector } from '@/components/location/PlaceSelector';
@@ -25,6 +26,7 @@ export default function Location() {
     createTemporaryPlace,
     loading,
     presenceRadiusMeters,
+    currentPresence,
   } = usePresence();
 
   const [step, setStep] = useState<'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'intention'>('detecting');
@@ -91,8 +93,15 @@ export default function Location() {
     }
   }, [fetchNearbyTemporaryPlaces, toast]);
 
-  // Flag to prevent duplicate fetches
+  // Flag to prevent duplicate fetches per navigation cycle
   const hasFetchedRef = useRef(false);
+  
+  // Reset fetch flag when component unmounts (new navigation cycle)
+  useEffect(() => {
+    return () => {
+      hasFetchedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -100,7 +109,17 @@ export default function Location() {
       return;
     }
 
-    // Prevent duplicate fetches in strict mode
+    // Wait for presence state to load before deciding
+    if (loading) return;
+
+    // Don't fetch if user already has active presence - redirect to home
+    if (currentPresence) {
+      console.log('[Location] User has active presence, redirecting to home');
+      navigate('/home', { replace: true });
+      return;
+    }
+
+    // Prevent duplicate fetches in same navigation cycle
     if (hasFetchedRef.current) return;
 
     // Request geolocation and auto-search
@@ -138,7 +157,7 @@ export default function Location() {
       toast({ variant: 'destructive', title: 'Geolocalização não suportada' });
       setStep('select');
     }
-  }, [user, navigate, toast, fetchPlaces]);
+  }, [user, navigate, toast, fetchPlaces, loading, currentPresence]);
 
   const handleSelectPlace = (placeId: string) => {
     setSelectedPlaceId(placeId);
@@ -242,21 +261,13 @@ export default function Location() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="bg-primary p-4 flex items-center gap-3">
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => navigate(-1)}
-          className="text-primary-foreground hover:bg-primary-foreground/10"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <img src={logoKatu} alt="Katu" className="w-16 h-auto" />
-      </div>
-
-      <div className="p-4 space-y-4 page-enter">
+    <MobileLayout>
+      <div className="p-4 space-y-4 page-fade">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-2">
+          <MapPin className="h-5 w-5 text-primary" />
+          <h1 className="text-xl font-bold">Onde você está?</h1>
+        </div>
         {/* Detecting location */}
         {step === 'detecting' && (
           <Card>
@@ -419,6 +430,6 @@ export default function Location() {
           </Card>
         )}
       </div>
-    </div>
+    </MobileLayout>
   );
 }
