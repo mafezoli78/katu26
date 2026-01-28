@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, MapPin, ArrowLeft } from 'lucide-react';
-import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS_METERS, EXPANDED_SEARCH_RADIUS_METERS } from '@/services/placesService';
+import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS_METERS, EXPANDED_SEARCH_RADIUS_METERS, MAX_SEARCH_RADIUS_METERS, MIN_RESULTS_FOR_EXPANSION } from '@/services/placesService';
 import { PlaceSelector } from '@/components/location/PlaceSelector';
 
 export default function Location() {
@@ -43,6 +43,7 @@ export default function Location() {
   const [searchingByName, setSearchingByName] = useState(false);
 
   // Auto-search for places when coordinates are obtained
+  // Progressive radius expansion: 300m → 600m → 800m (max)
   const fetchPlaces = useCallback(async (lat: number, lng: number) => {
     setPlacesLoading(true);
     
@@ -50,23 +51,38 @@ export default function Location() {
       // Fetch temporary places first
       await fetchNearbyTemporaryPlaces(lat, lng);
       
-      // Initial search with small radius
+      // Step 1: Initial search with 300m radius
+      console.log(`[Location] 🔍 Searching with initial radius: ${INITIAL_SEARCH_RADIUS_METERS}m`);
       let results = await placesService.searchNearby({
         latitude: lat,
         longitude: lng,
         radius: INITIAL_SEARCH_RADIUS_METERS,
         limit: 20,
       });
+      console.log(`[Location] Found ${results.length} places at ${INITIAL_SEARCH_RADIUS_METERS}m`);
 
-      // If no results, expand search radius
-      if (results.length === 0) {
-        console.log('[Location] No places found in initial radius, expanding search...');
+      // Step 2: If fewer than MIN_RESULTS_FOR_EXPANSION, expand to 600m
+      if (results.length < MIN_RESULTS_FOR_EXPANSION) {
+        console.log(`[Location] 🔍 Expanding to ${EXPANDED_SEARCH_RADIUS_METERS}m (found < ${MIN_RESULTS_FOR_EXPANSION})`);
         results = await placesService.searchNearby({
           latitude: lat,
           longitude: lng,
           radius: EXPANDED_SEARCH_RADIUS_METERS,
           limit: 20,
         });
+        console.log(`[Location] Found ${results.length} places at ${EXPANDED_SEARCH_RADIUS_METERS}m`);
+
+        // Step 3: If still fewer than MIN_RESULTS_FOR_EXPANSION, expand to max 800m
+        if (results.length < MIN_RESULTS_FOR_EXPANSION) {
+          console.log(`[Location] 🔍 Expanding to max radius: ${MAX_SEARCH_RADIUS_METERS}m`);
+          results = await placesService.searchNearby({
+            latitude: lat,
+            longitude: lng,
+            radius: MAX_SEARCH_RADIUS_METERS,
+            limit: 20,
+          });
+          console.log(`[Location] Found ${results.length} places at ${MAX_SEARCH_RADIUS_METERS}m (max)`);
+        }
       }
 
       setPlaces(results);
@@ -79,7 +95,7 @@ export default function Location() {
         }
       }
 
-      console.log(`[Location] Found ${results.length} places`);
+      console.log(`[Location] ✅ Final result: ${results.length} places`);
     } catch (error) {
       console.error('[Location] Error fetching places:', error);
       toast({
