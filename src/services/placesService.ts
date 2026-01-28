@@ -34,6 +34,9 @@ export const PROXIMITY_THRESHOLD_METERS = 30;  // Very close - offer direct entr
 export const INITIAL_SEARCH_RADIUS_METERS = 100; // Initial search radius
 export const EXPANDED_SEARCH_RADIUS_METERS = 500; // Expanded search if nothing found
 
+// Abort controller for cancelling in-flight requests
+let currentSearchController: AbortController | null = null;
+
 /**
  * Service layer for places management.
  * Abstracts the provider (Foursquare) and ensures all data comes from local database.
@@ -53,16 +56,31 @@ export const placesService = {
       query 
     } = params;
 
-    const { data, error } = await supabase.functions.invoke('search-places', {
-      body: { latitude, longitude, radius, limit, query },
-    });
-
-    if (error) {
-      console.error('Error searching places:', error);
-      throw new Error('Failed to search places');
+    // Cancel any previous in-flight request
+    if (currentSearchController) {
+      currentSearchController.abort();
     }
+    currentSearchController = new AbortController();
 
-    return data.places || [];
+    try {
+      const { data, error } = await supabase.functions.invoke('search-places', {
+        body: { latitude, longitude, radius, limit, query },
+      });
+
+      if (error) {
+        console.error('Error searching places:', error);
+        throw new Error('Failed to search places');
+      }
+
+      return data.places || [];
+    } catch (err: any) {
+      // Don't throw on abort - just return empty
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+        console.log('[placesService] Request aborted (new request started)');
+        return [];
+      }
+      throw err;
+    }
   },
 
   /**
