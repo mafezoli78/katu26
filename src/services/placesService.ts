@@ -31,8 +31,8 @@ export interface SearchPlacesParams {
 
 // Distance thresholds for UI decisions
 export const PROXIMITY_THRESHOLD_METERS = 30;  // Very close - offer direct entry
-export const INITIAL_SEARCH_RADIUS_METERS = 100; // Initial search radius
-export const EXPANDED_SEARCH_RADIUS_METERS = 500; // Expanded search if nothing found
+export const INITIAL_SEARCH_RADIUS_METERS = 500; // Initial search radius (social places)
+export const EXPANDED_SEARCH_RADIUS_METERS = 1000; // Expanded search if nothing found
 
 // Abort controller for cancelling in-flight requests
 let currentSearchController: AbortController | null = null;
