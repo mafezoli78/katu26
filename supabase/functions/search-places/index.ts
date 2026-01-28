@@ -722,7 +722,8 @@ Deno.serve(async (req) => {
     const latDelta = (radius * 2) / 111000;
     const lngDelta = (radius * 2) / (111000 * Math.cos(latitude * Math.PI / 180));
 
-    const { data: dbPlaces, error: dbError } = await supabase
+    // Build the database query
+    let dbQuery = supabase
       .from("places")
       .select("*")
       .eq("ativo", true)
@@ -730,8 +731,15 @@ Deno.serve(async (req) => {
       .gte("latitude", latitude - latDelta)
       .lte("latitude", latitude + latDelta)
       .gte("longitude", longitude - lngDelta)
-      .lte("longitude", longitude + lngDelta)
-      .limit(limit * 2); // Get more to account for filtering
+      .lte("longitude", longitude + lngDelta);
+    
+    // If there's a text query, filter by name (case-insensitive)
+    if (query && query.trim()) {
+      dbQuery = dbQuery.ilike("nome", `%${query.trim()}%`);
+      console.log(`[search-places] 🔤 Filtering DB by name: "${query.trim()}"`);
+    }
+
+    const { data: dbPlaces, error: dbError } = await dbQuery.limit(limit * 2); // Get more to account for filtering
 
     if (dbError) {
       console.error("[search-places] ❌ DB error:", dbError);
