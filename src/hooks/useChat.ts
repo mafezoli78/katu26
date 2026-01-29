@@ -9,6 +9,7 @@ export interface ChatState {
   isActive: boolean;
   conversation: ConversationWithDetails | null;
   endedReason: ConversationEndReason | null;
+  wasEndedByMe: boolean; // R3: Track who ended the conversation
 }
 
 export function useChat() {
@@ -18,6 +19,7 @@ export function useChat() {
     isActive: false,
     conversation: null,
     endedReason: null,
+    wasEndedByMe: false,
   });
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -45,10 +47,13 @@ export function useChat() {
             
             // If this was the active conversation, update state
             if (chatState.conversation?.id === updated.id) {
+              // R3: Check if it was ended by the other person
+              const wasEndedByMe = updated.encerrado_por === user?.id;
               setChatState({
                 isActive: false,
                 conversation: null,
                 endedReason: updated.encerrado_motivo || 'manual',
+                wasEndedByMe,
               });
             }
             
@@ -80,6 +85,7 @@ export function useChat() {
       isActive: true,
       conversation,
       endedReason: null,
+      wasEndedByMe: false,
     });
   }, []);
 
@@ -88,6 +94,7 @@ export function useChat() {
       isActive: false,
       conversation: null,
       endedReason: null,
+      wasEndedByMe: false,
     });
   }, []);
 
@@ -118,10 +125,12 @@ export function useChat() {
 
       console.log('[useChat] Chat ended:', reason);
 
+      // R3: We ended it, so wasEndedByMe = true
       setChatState({
         isActive: false,
         conversation: null,
         endedReason: reason,
+        wasEndedByMe: true,
       });
 
       // Refetch to update conversation list
@@ -175,17 +184,19 @@ export function useChat() {
       }
     }
 
+    // R3: We ended due to presence, so wasEndedByMe = true
     setChatState({
       isActive: false,
       conversation: null,
       endedReason: 'presence_end',
+      wasEndedByMe: true,
     });
 
     refetchConversations();
   }, [user, refetchConversations]);
 
   const clearEndedReason = useCallback(() => {
-    setChatState(prev => ({ ...prev, endedReason: null }));
+    setChatState(prev => ({ ...prev, endedReason: null, wasEndedByMe: false }));
   }, []);
 
   return {
