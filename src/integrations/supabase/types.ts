@@ -460,6 +460,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      end_presence_cascade: {
+        Args: { p_place_id: string; p_user_id: string }
+        Returns: undefined
+      }
       find_nearby_temporary_places: {
         Args: { radius_meters?: number; user_lat: number; user_lng: number }
         Returns: {
