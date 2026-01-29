@@ -39,8 +39,20 @@ export function usePeopleNearby(placeId: string | null) {
         .eq('place_id', placeId)
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
 
-      // Build set of user IDs that have active conversations with current user
+      // R2: Get conversations in cooldown period (reinteracao_permitida_em > now)
+      // These users should also be hidden from the list
+      const { data: cooldownConversations } = await supabase
+        .from('conversations')
+        .select('user1_id, user2_id, reinteracao_permitida_em')
+        .eq('ativo', false)
+        .eq('place_id', placeId)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .gt('reinteracao_permitida_em', new Date().toISOString());
+
+      // Build set of user IDs that have active conversations OR are in cooldown
       const matchedUserIds = new Set<string>();
+      
+      // Add users with active conversations
       if (activeConversations) {
         activeConversations.forEach(conv => {
           if (conv.user1_id === user.id) {
@@ -50,6 +62,18 @@ export function usePeopleNearby(placeId: string | null) {
           }
         });
       }
+      
+      // Add users in cooldown period
+      if (cooldownConversations) {
+        cooldownConversations.forEach(conv => {
+          if (conv.user1_id === user.id) {
+            matchedUserIds.add(conv.user2_id);
+          } else {
+            matchedUserIds.add(conv.user1_id);
+          }
+        });
+      }
+      
       setConversationUserIds(matchedUserIds);
 
       // Get active presences at this place (excluding current user)

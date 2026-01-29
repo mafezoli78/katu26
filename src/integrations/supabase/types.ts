@@ -24,6 +24,7 @@ export type Database = {
           id: string
           origem_wave_id: string | null
           place_id: string
+          reinteracao_permitida_em: string | null
           user1_id: string
           user2_id: string
         }
@@ -36,6 +37,7 @@ export type Database = {
           id?: string
           origem_wave_id?: string | null
           place_id: string
+          reinteracao_permitida_em?: string | null
           user1_id: string
           user2_id: string
         }
@@ -48,6 +50,7 @@ export type Database = {
           id?: string
           origem_wave_id?: string | null
           place_id?: string
+          reinteracao_permitida_em?: string | null
           user1_id?: string
           user2_id?: string
         }
@@ -322,7 +325,7 @@ export type Database = {
           {
             foreignKeyName: "presence_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -460,10 +463,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      end_presence_cascade: {
-        Args: { p_place_id: string; p_user_id: string }
-        Returns: undefined
-      }
+      end_presence_cascade:
+        | {
+            Args: { p_place_id: string; p_user_id: string }
+            Returns: undefined
+          }
+        | {
+            Args: { p_motivo?: string; p_place_id: string; p_user_id: string }
+            Returns: undefined
+          }
       find_nearby_temporary_places: {
         Args: { radius_meters?: number; user_lat: number; user_lng: number }
         Returns: {
