@@ -294,7 +294,8 @@ export function usePresence() {
 
   // Activate presence using place_id (the new source of truth)
   // Fluxo: 1) Encerrar presença anterior, 2) Expirar waves pendentes, 3) Criar nova presença
-  const activatePresenceAtPlace = async (placeId: string, intentionId: string) => {
+  // assuntoAtual: optional momentary expression text (max 140 chars)
+  const activatePresenceAtPlace = async (placeId: string, intentionId: string, assuntoAtual?: string) => {
     if (!user) return { error: new Error('Not authenticated') };
 
     if (!placeId) {
@@ -354,6 +355,7 @@ export function usePresence() {
         user_id: user.id,
         place_id: placeId,
         intention_id: intentionId,
+        assunto_atual: assuntoAtual?.trim() || null,
         inicio: new Date().toISOString(),
         ultima_atividade: new Date().toISOString(),
         ativo: true
@@ -395,7 +397,8 @@ export function usePresence() {
     nome: string, 
     latitude: number, 
     longitude: number, 
-    intentionId: string
+    intentionId: string,
+    assuntoAtual?: string
   ): Promise<{ error: Error | null; placeId: string | null }> => {
     if (!user) return { error: new Error('Not authenticated'), placeId: null };
 
@@ -427,8 +430,8 @@ export function usePresence() {
 
     console.log(`[usePresence] ✅ Temporary place created: ${placeData.id}`);
 
-    // Activate presence at the new place
-    const { error: presenceError } = await activatePresenceAtPlace(placeData.id, intentionId);
+    // Activate presence at the new place with optional expression
+    const { error: presenceError } = await activatePresenceAtPlace(placeData.id, intentionId, assuntoAtual);
 
     if (presenceError) {
       return { error: presenceError, placeId: null };

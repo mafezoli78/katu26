@@ -5,9 +5,9 @@ import { usePresence, NearbyTemporaryPlace } from '@/hooks/usePresence';
 import { MobileLayout } from '@/components/layout/MobileLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, MapPin, ArrowLeft } from 'lucide-react';
 import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS_METERS, EXPANDED_SEARCH_RADIUS_METERS, MAX_SEARCH_RADIUS_METERS, MIN_RESULTS_FOR_EXPANSION } from '@/services/placesService';
@@ -28,12 +28,15 @@ export default function Location() {
     currentPresence,
   } = usePresence();
 
-  const [step, setStep] = useState<'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'intention'>('detecting');
+  const [step, setStep] = useState<'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'expression'>('detecting');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
-  const [selectedIntentionId, setSelectedIntentionId] = useState<string | null>(null);
   const [newPlaceName, setNewPlaceName] = useState('');
   const [activating, setActivating] = useState(false);
+  const [expressionText, setExpressionText] = useState('');
+  
+  // Default intention: "Livre" (aberto a qualquer interação)
+  const DEFAULT_INTENTION_ID = '8302ef7d-e40e-494f-9ea3-7cfb52730bb2';
   const [nearbyTempToConfirm, setNearbyTempToConfirm] = useState<NearbyTemporaryPlace | null>(null);
   
   // New states for optimized flow
@@ -176,7 +179,7 @@ export default function Location() {
 
   const handleSelectPlace = (placeId: string) => {
     setSelectedPlaceId(placeId);
-    setStep('intention');
+    setStep('expression');
   };
 
   const handleSearchByName = async (query: string) => {
@@ -220,34 +223,33 @@ export default function Location() {
       return;
     }
 
-    // No nearby temporary places, proceed to intention selection
-    setStep('intention');
+    // No nearby temporary places, proceed to expression
+    setStep('expression');
   };
 
   const handleConfirmUseExistingTemp = () => {
     if (nearbyTempToConfirm) {
       setSelectedPlaceId(nearbyTempToConfirm.id);
-      setStep('intention');
+      setStep('expression');
     }
   };
 
   const handleConfirmCreateNewTemp = () => {
     // User wants to create new place even though one exists nearby
     setNearbyTempToConfirm(null);
-    setStep('intention');
+    setStep('expression');
   };
 
   const handleActivatePresence = async () => {
-    if (!selectedIntentionId) return;
-
     setActivating(true);
     
     try {
       let error: Error | null = null;
+      const trimmedExpression = expressionText.trim() || undefined;
 
       if (selectedPlaceId) {
         // Activate presence at existing place (Foursquare or temporary)
-        const result = await activatePresenceAtPlace(selectedPlaceId, selectedIntentionId);
+        const result = await activatePresenceAtPlace(selectedPlaceId, DEFAULT_INTENTION_ID, trimmedExpression);
         error = result.error;
       } else if (newPlaceName.trim() && userCoords) {
         // Create new temporary place and activate presence
@@ -255,7 +257,8 @@ export default function Location() {
           newPlaceName.trim(),
           userCoords.lat,
           userCoords.lng,
-          selectedIntentionId
+          DEFAULT_INTENTION_ID,
+          trimmedExpression
         );
         error = result.error;
       } else {
@@ -397,8 +400,8 @@ export default function Location() {
           </div>
         )}
 
-        {/* Select intention */}
-        {step === 'intention' && (
+        {/* Expression screen - momentary expression */}
+        {step === 'expression' && (
           <div className="space-y-4 animate-fade-in">
             <div className="flex items-center gap-3 mb-2">
               <Button 
@@ -418,55 +421,55 @@ export default function Location() {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h2 className="text-xl font-bold">Qual sua intenção?</h2>
-                <p className="text-sm text-muted-foreground">
-                  Isso ajuda a conectar com pessoas compatíveis
-                </p>
+                <h2 className="text-xl font-bold">Expressão momentânea</h2>
               </div>
             </div>
             
             <Card className="border-0 shadow-sm">
-              <CardContent className="pt-6 space-y-4">
-                <RadioGroup
-                  value={selectedIntentionId || undefined}
-                  onValueChange={setSelectedIntentionId}
-                  className="space-y-2"
-                >
-                  {intentions.map((intention) => (
-                    <div 
-                      key={intention.id} 
-                      className={`flex items-center space-x-3 p-4 border rounded-xl transition-all cursor-pointer ${
-                        selectedIntentionId === intention.id 
-                          ? 'border-katu-blue bg-katu-blue/5' 
-                          : 'border-border hover:border-muted-foreground/30'
-                      }`}
-                      onClick={() => setSelectedIntentionId(intention.id)}
-                    >
-                      <RadioGroupItem value={intention.id} id={intention.id} />
-                      <Label htmlFor={intention.id} className="flex-1 cursor-pointer">
-                        <span className="font-medium">{intention.nome}</span>
-                        {intention.descricao && (
-                          <p className="text-sm text-muted-foreground">{intention.descricao}</p>
-                        )}
-                      </Label>
-                    </div>
-                  ))}
-                </RadioGroup>
+              <CardContent className="pt-6 space-y-5">
+                <div>
+                  <p className="text-base text-foreground mb-4">
+                    Quer se conectar com alguém sobre algo específico agora?
+                  </p>
+                  <Textarea
+                    placeholder="Ex: Alguém quer jogar conversa fora sobre viagens?"
+                    value={expressionText}
+                    onChange={(e) => setExpressionText(e.target.value.slice(0, 140))}
+                    className="min-h-[100px] rounded-xl resize-none"
+                    maxLength={140}
+                  />
+                  <p className="text-xs text-muted-foreground text-right mt-1">
+                    {expressionText.length}/140
+                  </p>
+                </div>
 
-                <Button 
-                  onClick={handleActivatePresence}
-                  disabled={!selectedIntentionId || activating}
-                  className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
-                >
-                  {activating ? (
-                    <>
-                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                      Ativando...
-                    </>
-                  ) : (
-                    'Estou aqui!'
-                  )}
-                </Button>
+                <div className="flex flex-col gap-2 pt-2">
+                  <Button 
+                    onClick={handleActivatePresence}
+                    disabled={activating}
+                    className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
+                  >
+                    {activating ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Ativando...
+                      </>
+                    ) : (
+                      'Continuar'
+                    )}
+                  </Button>
+                  <Button 
+                    variant="ghost"
+                    onClick={() => {
+                      setExpressionText('');
+                      handleActivatePresence();
+                    }}
+                    disabled={activating}
+                    className="w-full h-11 rounded-xl text-muted-foreground"
+                  >
+                    Seguir sem escrever
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>
