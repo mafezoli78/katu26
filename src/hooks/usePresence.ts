@@ -260,17 +260,19 @@ export function usePresence() {
     const placeId = currentPresence?.place_id || currentPlace?.id;
 
     // Call the cascade cleanup function if we have a place_id
+    // Pass the reason (p_motivo) to preserve distinction in conversations
     if (placeId) {
       try {
         const { error } = await supabase.rpc('end_presence_cascade', {
           p_user_id: user.id,
-          p_place_id: placeId
+          p_place_id: placeId,
+          p_motivo: reason
         });
         
         if (error) {
           console.error('[Presence] Error in cascade cleanup:', error);
         } else {
-          console.log('[Presence] ✅ Cascade cleanup completed');
+          console.log('[Presence] ✅ Cascade cleanup completed with reason:', reason);
         }
       } catch (err) {
         console.error('[Presence] Error calling end_presence_cascade:', err);
