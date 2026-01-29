@@ -100,6 +100,7 @@ export function useWaves() {
   /**
    * Send a wave to another user at a specific place.
    * REQUIRES: placeId (the user's current place)
+   * R1: Prevents waving to users with active conversations
    */
   const sendWave = async (toUserId: string, placeId: string) => {
     if (!user) return { error: new Error('Not authenticated') };
@@ -112,6 +113,19 @@ export function useWaves() {
     // Prevent sending wave to self
     if (toUserId === user.id) {
       return { error: new Error('Você não pode acenar para si mesmo') };
+    }
+
+    // R1: Check if there's an active conversation with this user at this place
+    const { data: existingConversation } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('ativo', true)
+      .eq('place_id', placeId)
+      .or(`and(user1_id.eq.${user.id},user2_id.eq.${toUserId}),and(user1_id.eq.${toUserId},user2_id.eq.${user.id})`)
+      .maybeSingle();
+
+    if (existingConversation) {
+      return { error: new Error('Você já tem uma conversa ativa com esta pessoa') };
     }
 
     // Check if wave already sent to this user at this place

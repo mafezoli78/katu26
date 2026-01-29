@@ -20,15 +20,38 @@ export function usePeopleNearby(placeId: string | null) {
   const { user } = useAuth();
   const [people, setPeople] = useState<PersonNearby[]>([]);
   const [loading, setLoading] = useState(true);
+  const [conversationUserIds, setConversationUserIds] = useState<Set<string>>(new Set());
 
   const fetchPeopleNearby = async () => {
     if (!user || !placeId) {
       setPeople([]);
+      setConversationUserIds(new Set());
       setLoading(false);
       return;
     }
 
     try {
+      // R1: Get active conversations at this place to exclude matched users
+      const { data: activeConversations } = await supabase
+        .from('conversations')
+        .select('user1_id, user2_id')
+        .eq('ativo', true)
+        .eq('place_id', placeId)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
+      // Build set of user IDs that have active conversations with current user
+      const matchedUserIds = new Set<string>();
+      if (activeConversations) {
+        activeConversations.forEach(conv => {
+          if (conv.user1_id === user.id) {
+            matchedUserIds.add(conv.user2_id);
+          } else {
+            matchedUserIds.add(conv.user1_id);
+          }
+        });
+      }
+      setConversationUserIds(matchedUserIds);
+
       // Get active presences at this place (excluding current user)
       // Query by place_id first, fall back to location_id for backwards compatibility
       const { data: presences, error: presenceError } = await supabase
@@ -57,6 +80,12 @@ export function usePeopleNearby(placeId: string | null) {
       const peopleData: PersonNearby[] = [];
 
       for (const presence of presences) {
+        // R1: Skip users who have active conversations with current user
+        if (matchedUserIds.has(presence.user_id)) {
+          console.log(`[usePeopleNearby] Skipping user ${presence.user_id} - has active conversation`);
+          continue;
+        }
+
         // Check if presence is still valid (within 1 hour)
         const lastActivity = new Date(presence.ultima_atividade).getTime();
         const now = Date.now();
@@ -112,9 +141,18 @@ export function usePeopleNearby(placeId: string | null) {
     return () => clearInterval(interval);
   }, [user, placeId]);
 
+  /**
+   * R1: Check if user has an active conversation with another user at this place.
+   * Used to hide wave button for matched users.
+   */
+  const hasActiveConversationWith = (userId: string): boolean => {
+    return conversationUserIds.has(userId);
+  };
+
   return {
     people,
     loading,
     refetch: fetchPeopleNearby,
+    hasActiveConversationWith,
   };
 }

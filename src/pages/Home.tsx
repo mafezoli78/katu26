@@ -49,7 +49,7 @@ export default function Home() {
     presenceRadiusMeters,
     loading: presenceLoading 
   } = usePresence();
-  const { people, loading: peopleLoading, refetch: refetchPeople } = usePeopleNearby(currentPlace?.id || null);
+  const { people, loading: peopleLoading, refetch: refetchPeople, hasActiveConversationWith } = usePeopleNearby(currentPlace?.id || null);
   const { sendWave, hasWavedTo, refetch: refetchWaves } = useWaves();
 
   useEffect(() => {
@@ -204,9 +204,17 @@ export default function Home() {
           <div className="space-y-3">
             {people.map((person) => {
               const alreadyWaved = hasWavedTo(person.id, currentPlace.id);
+              // R1: Check if user has active conversation (shouldn't appear, but safety check)
+              const hasConversation = hasActiveConversationWith(person.id);
               const age = person.profile.data_nascimento 
                 ? new Date().getFullYear() - new Date(person.profile.data_nascimento).getFullYear()
                 : null;
+
+              // R1: Users with active conversations should not be shown (filtered in hook)
+              // This is a safety check in case the filter misses something
+              if (hasConversation) {
+                return null;
+              }
 
               return (
                 <Card key={person.id} className="border-0 shadow-sm overflow-hidden">
@@ -259,7 +267,7 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* Wave button */}
+                    {/* Wave button - R1: Hidden for users with active conversations */}
                     <Button
                       className={`w-full mt-4 h-11 rounded-xl font-semibold ${
                         alreadyWaved 

@@ -45,22 +45,31 @@ export default function Chat() {
     }
   }, [conversationIdParam, activeConversations, chatState.isActive, openChat, setSearchParams]);
 
-  // Show toast when chat ends
+  // R3: Show toast when chat ends with correct feedback message
   useEffect(() => {
     if (chatState.endedReason) {
+      // R3: Differentiate messages based on who ended and why
       const messages = {
-        manual: 'Conversa encerrada',
+        manual_self: 'Conversa encerrada por você',
+        manual_other: 'A outra pessoa encerrou a conversa',
         presence_end: 'Conversa encerrada (saída do local)',
       };
       
+      // Determine which message to show
+      // If we ended it manually, chatState.endedBy would be our user id
+      let messageKey: keyof typeof messages = 'presence_end';
+      if (chatState.endedReason === 'manual') {
+        messageKey = chatState.wasEndedByMe ? 'manual_self' : 'manual_other';
+      }
+      
       toast({
-        title: messages[chatState.endedReason],
+        title: messages[messageKey],
         description: 'As mensagens foram apagadas',
       });
       
       clearEndedReason();
     }
-  }, [chatState.endedReason, clearEndedReason]);
+  }, [chatState.endedReason, chatState.wasEndedByMe, clearEndedReason]);
 
   const handleEndChat = async () => {
     const { error } = await endChat('manual');
