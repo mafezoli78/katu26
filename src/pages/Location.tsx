@@ -268,7 +268,6 @@ export default function Location() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao ativar presença', description: error.message });
       } else {
-        toast({ title: 'Você está aqui! 📍' });
         navigate('/home', { replace: true });
       }
     } catch (err) {
