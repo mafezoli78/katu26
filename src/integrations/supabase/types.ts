@@ -463,6 +463,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_presence: {
+        Args: {
+          p_assunto_atual?: string
+          p_intention_id: string
+          p_place_id: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       end_presence_cascade:
         | {
             Args: { p_place_id: string; p_user_id: string }
