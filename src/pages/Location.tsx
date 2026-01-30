@@ -267,9 +267,8 @@ export default function Location() {
 
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao ativar presença', description: error.message });
-      } else {
-        navigate('/home', { replace: true });
       }
+      // Navigation is handled by useEffect when currentPresence updates
     } catch (err) {
       toast({ variant: 'destructive', title: 'Erro inesperado' });
     } finally {
