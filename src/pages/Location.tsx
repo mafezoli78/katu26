@@ -420,18 +420,21 @@ export default function Location() {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h2 className="text-xl font-bold">Expressão momentânea</h2>
+                <h2 className="text-xl font-bold">Seu momento aqui</h2>
               </div>
             </div>
             
             <Card className="border-0 shadow-sm">
               <CardContent className="pt-6 space-y-5">
                 <div>
-                  <p className="text-base text-foreground mb-4">
-                    Quer se conectar com alguém sobre algo específico agora?
+                  <p className="text-base text-foreground mb-1">
+                    O que faz sentido pra você agora?
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Opcional
                   </p>
                   <Textarea
-                    placeholder="Ex: Alguém quer jogar conversa fora sobre viagens?"
+                    placeholder="Ex: Aberto a conversar."
                     value={expressionText}
                     onChange={(e) => setExpressionText(e.target.value.slice(0, 140))}
                     className="min-h-[100px] rounded-xl resize-none"
@@ -442,33 +445,20 @@ export default function Location() {
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-2 pt-2">
-                  <Button 
-                    onClick={handleActivatePresence}
-                    disabled={activating}
-                    className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
-                  >
-                    {activating ? (
-                      <>
-                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        Ativando...
-                      </>
-                    ) : (
-                      'Continuar'
-                    )}
-                  </Button>
-                  <Button 
-                    variant="ghost"
-                    onClick={() => {
-                      setExpressionText('');
-                      handleActivatePresence();
-                    }}
-                    disabled={activating}
-                    className="w-full h-11 rounded-xl text-muted-foreground"
-                  >
-                    Seguir sem escrever
-                  </Button>
-                </div>
+                <Button 
+                  onClick={handleActivatePresence}
+                  disabled={activating}
+                  className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
+                >
+                  {activating ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Ativando...
+                    </>
+                  ) : (
+                    'Continuar'
+                  )}
+                </Button>
               </CardContent>
             </Card>
           </div>
