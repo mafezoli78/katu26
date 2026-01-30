@@ -58,25 +58,13 @@ export default function Home() {
     }
   }, [user, navigate]);
 
-  // Show toast when presence ends (by GPS exit or expiration)
+  // Handle presence end - refetch waves and clear reason without showing toast
   useEffect(() => {
     if (lastEndReason) {
-      const variant = lastEndReason.type === 'gps_exit' ? 'destructive' : 'default';
-      const icon = lastEndReason.type === 'gps_exit' ? '📍' : '⏰';
-      
-      toast({
-        variant,
-        title: `${icon} ${lastEndReason.message}`,
-        description: lastEndReason.type === 'gps_exit' 
-          ? 'Seus acenos foram encerrados automaticamente.'
-          : 'Selecione um novo local para continuar.',
-      });
-      
-      // Refetch waves since they were cleared
       refetchWaves();
       clearLastEndReason();
     }
-  }, [lastEndReason, toast, clearLastEndReason, refetchWaves]);
+  }, [lastEndReason, clearLastEndReason, refetchWaves]);
 
   const handleWave = async (toUserId: string) => {
     if (!currentPlace) return;
