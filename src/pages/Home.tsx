@@ -234,29 +234,6 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Interests */}
-                    {person.interests.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-3">
-                        {person.interests.slice(0, 5).map((interest) => {
-                          const isCommon = person.commonInterests.includes(interest.tag);
-                          return (
-                            <Badge 
-                              key={interest.id}
-                              variant={isCommon ? 'default' : 'secondary'}
-                              className={`text-xs rounded-md ${
-                                isCommon 
-                                  ? 'bg-accent text-accent-foreground' 
-                                  : 'bg-muted text-muted-foreground'
-                              }`}
-                            >
-                              {isCommon && <Sparkles className="h-3 w-3 mr-1" />}
-                              {interest.tag}
-                            </Badge>
-                          );
-                        })}
-                      </div>
-                    )}
-
                     {/* Wave button - R1: Hidden for users with active conversations */}
                     <Button
                       className={`w-full mt-4 h-11 rounded-xl font-semibold ${
