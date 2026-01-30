@@ -221,14 +221,16 @@ export default function Home() {
                             {age && <span className="text-muted-foreground font-normal">, {age}</span>}
                           </h3>
                         </div>
-                        <Badge variant="outline" className="text-xs mt-1 rounded-md">
-                          {person.intention.nome}
-                        </Badge>
-                        {person.profile.bio && (
+                        {/* Exibir assunto_atual OU bio, nunca ambos */}
+                        {person.assuntoAtual ? (
                           <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                            {person.profile.bio}
+                            <span className="font-medium text-foreground">Aqui:</span> {person.assuntoAtual}
                           </p>
-                        )}
+                        ) : person.profile.bio ? (
+                          <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
+                            <span className="font-medium text-foreground">Sobre mim:</span> {person.profile.bio}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 
