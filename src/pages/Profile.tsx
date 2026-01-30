@@ -11,7 +11,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, LogOut, Check, User, Heart, Pencil, X } from 'lucide-react';
+import { ImageCropper } from '@/components/profile/ImageCropper';
+import { EmailChangeDialog } from '@/components/profile/EmailChangeDialog';
+import { PasswordChangeDialog } from '@/components/profile/PasswordChangeDialog';
+import { 
+  Camera, LogOut, Check, User, Heart, Pencil, X, 
+  Calendar, Mail, Lock, AlertCircle 
+} from 'lucide-react';
 
 const AVAILABLE_INTERESTS = [
   'Música', 'Cinema', 'Esportes', 'Tecnologia', 'Viagens', 'Gastronomia',
@@ -19,17 +25,29 @@ const AVAILABLE_INTERESTS = [
   'Dança', 'Teatro', 'Empreendedorismo', 'Fitness', 'Pets', 'Café'
 ];
 
+const MIN_BIO_LENGTH = 40;
+const MAX_BIO_LENGTH = 150;
+
 export default function Profile() {
   const { user, signOut } = useAuth();
-  const { profile, interests, updateProfile, updateInterests, uploadAvatar, calculateAge } = useProfile();
+  const { profile, interests, updateProfile, updateInterests, uploadAvatar, calculateAge, refetch } = useProfile();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [editing, setEditing] = useState(false);
   const [nome, setNome] = useState('');
   const [bio, setBio] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Image cropper state
+  const [cropperOpen, setCropperOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+
+  // Dialogs state
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -41,20 +59,35 @@ export default function Profile() {
     if (profile) {
       setNome(profile.nome || '');
       setBio(profile.bio || '');
+      setDataNascimento(profile.data_nascimento || '');
     }
     setSelectedInterests(interests.map(i => i.tag));
   }, [profile, interests]);
 
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const { error } = await uploadAvatar(file);
-      if (error) {
-        toast({ variant: 'destructive', title: 'Erro ao atualizar foto' });
-      } else {
-        toast({ title: 'Foto atualizada!' });
-      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImageToCrop(reader.result as string);
+        setCropperOpen(true);
+      };
+      reader.readAsDataURL(file);
     }
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    const file = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+    const { error } = await uploadAvatar(file);
+    if (error) {
+      toast({ variant: 'destructive', title: 'Erro ao atualizar foto' });
+    } else {
+      toast({ title: 'Foto atualizada!' });
+      refetch();
+    }
+    setImageToCrop(null);
   };
 
   const toggleInterest = (interest: string) => {
@@ -65,15 +98,44 @@ export default function Profile() {
     );
   };
 
-  const handleSave = async () => {
+  const validateForm = (): boolean => {
+    if (!profile?.foto_url) {
+      toast({ variant: 'destructive', title: 'Foto de perfil é obrigatória' });
+      return false;
+    }
+    if (!nome.trim()) {
+      toast({ variant: 'destructive', title: 'Nome é obrigatório' });
+      return false;
+    }
+    if (!dataNascimento) {
+      toast({ variant: 'destructive', title: 'Data de nascimento é obrigatória' });
+      return false;
+    }
+    if (!bio.trim()) {
+      toast({ variant: 'destructive', title: 'Bio é obrigatória' });
+      return false;
+    }
+    if (bio.trim().length < MIN_BIO_LENGTH) {
+      toast({ variant: 'destructive', title: `Bio deve ter pelo menos ${MIN_BIO_LENGTH} caracteres` });
+      return false;
+    }
     if (selectedInterests.length < 3) {
       toast({ variant: 'destructive', title: 'Selecione pelo menos 3 interesses' });
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const handleSave = async () => {
+    if (!validateForm()) return;
 
     setLoading(true);
     try {
-      await updateProfile({ nome: nome.trim(), bio: bio.trim() || null });
+      await updateProfile({ 
+        nome: nome.trim(), 
+        bio: bio.trim(),
+        data_nascimento: dataNascimento
+      });
       await updateInterests(selectedInterests);
       toast({ title: 'Perfil atualizado!' });
       setEditing(false);
@@ -91,9 +153,18 @@ export default function Profile() {
 
   const age = profile?.data_nascimento ? calculateAge(profile.data_nascimento) : null;
 
+  const getBioStatus = () => {
+    const length = bio.trim().length;
+    if (length === 0) return { color: 'text-muted-foreground', message: `0/${MAX_BIO_LENGTH}` };
+    if (length < MIN_BIO_LENGTH) return { color: 'text-amber-500', message: `${length}/${MAX_BIO_LENGTH} (mín. ${MIN_BIO_LENGTH})` };
+    return { color: 'text-muted-foreground', message: `${length}/${MAX_BIO_LENGTH}` };
+  };
+
+  const bioStatus = getBioStatus();
+
   return (
     <MobileLayout>
-      <div className="p-4 space-y-4 page-fade">
+      <div className="p-4 space-y-4 page-fade pb-24">
         {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -128,33 +199,69 @@ export default function Profile() {
                 </Avatar>
                 <label className="absolute bottom-0 right-0 bg-accent text-accent-foreground rounded-full p-2 cursor-pointer hover:bg-accent/90 shadow-lg transition-transform hover:scale-105">
                   <Camera className="h-4 w-4" />
-                  <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleImageSelect} 
+                    className="hidden" 
+                  />
                 </label>
               </div>
             </div>
 
+            {/* Photo required warning */}
+            {!profile?.foto_url && editing && (
+              <div className="flex items-center gap-2 text-destructive text-sm mb-4 justify-center">
+                <AlertCircle className="h-4 w-4" />
+                <span>Foto de perfil é obrigatória</span>
+              </div>
+            )}
+
             {editing ? (
               <div className="space-y-4">
+                {/* Name */}
                 <div>
-                  <Label className="text-sm font-medium">Nome</Label>
+                  <Label className="text-sm font-medium">Nome *</Label>
                   <Input 
                     value={nome} 
                     onChange={(e) => setNome(e.target.value)} 
                     maxLength={50} 
                     className="mt-1.5 h-11 rounded-xl"
+                    placeholder="Seu nome"
                   />
                 </div>
+
+                {/* Birth date */}
                 <div>
-                  <Label className="text-sm font-medium">Bio</Label>
+                  <Label className="text-sm font-medium">Data de nascimento *</Label>
+                  <Input 
+                    type="date"
+                    value={dataNascimento} 
+                    onChange={(e) => setDataNascimento(e.target.value)} 
+                    className="mt-1.5 h-11 rounded-xl"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  {dataNascimento && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Idade: {calculateAge(dataNascimento)} anos
+                    </p>
+                  )}
+                </div>
+
+                {/* Bio */}
+                <div>
+                  <Label className="text-sm font-medium">Bio *</Label>
                   <Textarea 
                     value={bio} 
                     onChange={(e) => setBio(e.target.value)} 
-                    maxLength={150} 
+                    maxLength={MAX_BIO_LENGTH} 
                     rows={3}
                     className="mt-1.5 rounded-xl resize-none"
                     placeholder="Conte um pouco sobre você..."
                   />
-                  <p className="text-xs text-muted-foreground text-right mt-1">{bio.length}/150</p>
+                  <p className={`text-xs text-right mt-1 ${bioStatus.color}`}>
+                    {bioStatus.message}
+                  </p>
                 </div>
               </div>
             ) : (
@@ -177,6 +284,7 @@ export default function Profile() {
             <CardTitle className="text-base flex items-center gap-2">
               <Heart className="h-4 w-4 text-accent" />
               Interesses
+              {editing && <span className="text-xs text-muted-foreground font-normal">(mín. 3)</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -216,13 +324,41 @@ export default function Profile() {
                 )
               )}
             </div>
-            {editing && (
-              <p className="text-xs text-muted-foreground mt-3">
-                Selecione pelo menos 3 interesses
-              </p>
-            )}
           </CardContent>
         </Card>
+
+        {/* Account Settings Card - Only in view mode */}
+        {!editing && (
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                Conta
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setEmailDialogOpen(true)}
+                className="w-full justify-start h-11 rounded-xl"
+              >
+                <Mail className="h-4 w-4 mr-2" />
+                Alterar email
+                <span className="ml-auto text-xs text-muted-foreground truncate max-w-[140px]">
+                  {user?.email}
+                </span>
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setPasswordDialogOpen(true)}
+                className="w-full justify-start h-11 rounded-xl"
+              >
+                <Lock className="h-4 w-4 mr-2" />
+                Alterar senha
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Action Buttons */}
         <div className="space-y-2 pt-2">
@@ -230,7 +366,16 @@ export default function Profile() {
             <div className="flex gap-2">
               <Button 
                 variant="outline" 
-                onClick={() => setEditing(false)} 
+                onClick={() => {
+                  setEditing(false);
+                  // Reset to original values
+                  if (profile) {
+                    setNome(profile.nome || '');
+                    setBio(profile.bio || '');
+                    setDataNascimento(profile.data_nascimento || '');
+                  }
+                  setSelectedInterests(interests.map(i => i.tag));
+                }} 
                 className="flex-1 h-11 rounded-xl"
               >
                 <X className="h-4 w-4 mr-1.5" />
@@ -256,6 +401,32 @@ export default function Profile() {
           )}
         </div>
       </div>
+
+      {/* Image Cropper Dialog */}
+      {imageToCrop && (
+        <ImageCropper
+          open={cropperOpen}
+          onClose={() => {
+            setCropperOpen(false);
+            setImageToCrop(null);
+          }}
+          imageSrc={imageToCrop}
+          onCropComplete={handleCropComplete}
+        />
+      )}
+
+      {/* Email Change Dialog */}
+      <EmailChangeDialog
+        open={emailDialogOpen}
+        onClose={() => setEmailDialogOpen(false)}
+        currentEmail={user?.email || ''}
+      />
+
+      {/* Password Change Dialog */}
+      <PasswordChangeDialog
+        open={passwordDialogOpen}
+        onClose={() => setPasswordDialogOpen(false)}
+      />
     </MobileLayout>
   );
 }
