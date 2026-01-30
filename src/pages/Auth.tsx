@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import logoKatu from '@/assets/logo-katu-branco.png';
+import logoKatuu from '@/assets/logo-katuu.png';
+import iconKatuu from '@/assets/icon-katuu.png';
 
 const emailSchema = z.string().email('Email inválido');
 const passwordSchema = z.string().min(6, 'Senha deve ter pelo menos 6 caracteres');
@@ -94,14 +95,29 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-primary flex flex-col">
+    <div className="min-h-screen katu-gradient flex flex-col relative overflow-hidden">
+      {/* Background subtle pattern - same as Splash */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none">
+        <div className="absolute top-20 left-10 w-32 h-32 rounded-full bg-white/20 blur-3xl" />
+        <div className="absolute bottom-40 right-10 w-40 h-40 rounded-full bg-white/15 blur-3xl" />
+      </div>
+
       {/* Header with logo */}
-      <div className="flex-1 flex items-center justify-center py-8 animate-fade-in">
-        <img src={logoKatu} alt="Katu" className="w-32 h-auto" />
+      <div className="flex-1 flex flex-col items-center justify-center py-8 animate-fade-in relative z-10">
+        <img 
+          src={logoKatuu} 
+          alt="Katuu" 
+          className="w-44 h-auto mb-4 drop-shadow-lg"
+        />
+        <img 
+          src={iconKatuu} 
+          alt="" 
+          className="w-20 h-20 object-contain drop-shadow-xl"
+        />
       </div>
 
       {/* Auth card */}
-      <Card className="rounded-t-3xl rounded-b-none border-0 shadow-2xl animate-slide-up">
+      <Card className="rounded-t-3xl rounded-b-none border-0 shadow-2xl animate-slide-up relative z-10">
         <CardHeader className="space-y-1 pt-8">
           <CardTitle className="text-2xl font-bold text-center">
             {isLogin ? 'Bem-vindo de volta' : 'Criar conta'}
