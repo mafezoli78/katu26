@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Profile, UserInterest } from './useProfile';
-import { Intention } from './usePresence';
 
 export interface PersonNearby {
   id: string;
   profile: Profile;
   interests: UserInterest[];
-  intention: Intention;
   commonInterests: string[];
+  assuntoAtual: string | null;
 }
 
 /**
@@ -115,7 +114,7 @@ export function usePeopleNearby(placeId: string | null) {
         const now = Date.now();
         if (now - lastActivity > 60 * 60 * 1000) continue; // Skip expired presences
 
-        const [profileResult, interestsResult, intentionResult] = await Promise.all([
+        const [profileResult, interestsResult] = await Promise.all([
           supabase
             .from('profiles')
             .select('*')
@@ -124,15 +123,10 @@ export function usePeopleNearby(placeId: string | null) {
           supabase
             .from('user_interests')
             .select('*')
-            .eq('user_id', presence.user_id),
-          supabase
-            .from('intentions')
-            .select('*')
-            .eq('id', presence.intention_id)
-            .single()
+            .eq('user_id', presence.user_id)
         ]);
 
-        if (profileResult.data && intentionResult.data) {
+        if (profileResult.data) {
           const theirTags = interestsResult.data?.map(i => i.tag) || [];
           const commonInterests = myTags.filter(tag => theirTags.includes(tag));
 
@@ -140,8 +134,8 @@ export function usePeopleNearby(placeId: string | null) {
             id: presence.user_id,
             profile: profileResult.data,
             interests: interestsResult.data || [],
-            intention: intentionResult.data,
-            commonInterests
+            commonInterests,
+            assuntoAtual: presence.assunto_atual || null
           });
         }
       }
