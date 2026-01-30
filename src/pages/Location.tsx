@@ -420,7 +420,7 @@ export default function Location() {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h2 className="text-xl font-bold">Expressão momentânea</h2>
+                <h2 className="text-xl font-bold">Seu momento aqui</h2>
               </div>
             </div>
             
@@ -428,10 +428,10 @@ export default function Location() {
               <CardContent className="pt-6 space-y-5">
                 <div>
                   <p className="text-base text-foreground mb-4">
-                    Quer se conectar com alguém sobre algo específico agora?
+                    O que faz sentido pra você agora? (opcional)
                   </p>
                   <Textarea
-                    placeholder="Ex: Alguém quer jogar conversa fora sobre viagens?"
+                    placeholder="Ex: Aberto a conversar."
                     value={expressionText}
                     onChange={(e) => setExpressionText(e.target.value.slice(0, 140))}
                     className="min-h-[100px] rounded-xl resize-none"
@@ -442,7 +442,7 @@ export default function Location() {
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-2 pt-2">
+                <div className="pt-2">
                   <Button 
                     onClick={handleActivatePresence}
                     disabled={activating}
@@ -456,17 +456,6 @@ export default function Location() {
                     ) : (
                       'Continuar'
                     )}
-                  </Button>
-                  <Button 
-                    variant="ghost"
-                    onClick={() => {
-                      setExpressionText('');
-                      handleActivatePresence();
-                    }}
-                    disabled={activating}
-                    className="w-full h-11 rounded-xl text-muted-foreground"
-                  >
-                    Seguir sem escrever
                   </Button>
                 </div>
               </CardContent>
