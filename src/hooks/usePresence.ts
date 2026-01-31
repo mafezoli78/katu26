@@ -51,7 +51,10 @@ export function usePresence() {
   const [nearbyTemporaryPlaces, setNearbyTemporaryPlaces] = useState<NearbyTemporaryPlace[]>([]);
   const [currentPresence, setCurrentPresence] = useState<Presence | null>(null);
   const [currentPlace, setCurrentPlace] = useState<Place | null>(null);
+  // Start with loading=true to prevent redirects before backend fetch
   const [loading, setLoading] = useState(true);
+  // Track if initial fetch completed (prevents state reset on remount)
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const [placesLoading, setPlacesLoading] = useState(false);
   const [remainingTime, setRemainingTime] = useState<number>(0);
   const [lastEndReason, setLastEndReason] = useState<PresenceEndReason | null>(null);
@@ -401,12 +404,42 @@ export function usePresence() {
 
   // ============= Effects =============
 
+  // Visibility change handler - refetch presence when returning from background
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && user && hasFetchedOnce) {
+        console.log('[usePresence] App returned to foreground - refetching presence');
+        fetchCurrentPresence();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user, hasFetchedOnce]);
+
+  // Initial fetch - only runs once per user session
   useEffect(() => {
     const init = async () => {
-      setLoading(true);
+      if (!user) {
+        setCurrentPresence(null);
+        setCurrentPlace(null);
+        setLoading(false);
+        setHasFetchedOnce(false);
+        return;
+      }
+      
+      // Only set loading=true on first fetch, not on refetch
+      if (!hasFetchedOnce) {
+        setLoading(true);
+      }
+      
       await fetchIntentions();
       await fetchCurrentPresence();
+      
       setLoading(false);
+      setHasFetchedOnce(true);
     };
     init();
 
