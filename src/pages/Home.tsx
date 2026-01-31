@@ -78,8 +78,11 @@ export default function Home() {
   };
 
   // Auto-redirect to location page if no active presence
+  // IMPORTANT: Only redirect AFTER loading is complete to prevent premature redirects
+  // when returning from background (presence state needs time to refetch from backend)
   useEffect(() => {
-    if (!presenceLoading && (!currentPresence || !currentPlace)) {
+    if (presenceLoading) return; // Wait for backend fetch
+    if (!currentPresence || !currentPlace) {
       navigate('/location', { replace: true });
     }
   }, [presenceLoading, currentPresence, currentPlace, navigate]);
