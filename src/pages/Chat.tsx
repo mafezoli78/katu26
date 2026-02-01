@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChat } from '@/hooks/useChat';
+import { usePresence } from '@/hooks/usePresence';
 import { MobileLayout } from '@/components/layout/MobileLayout';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ConversationsList } from '@/components/chat/ConversationsList';
@@ -15,6 +16,9 @@ export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const conversationIdParam = searchParams.get('conversationId');
   
+  // Get presence state to pass to useChat
+  const { presenceState, currentPresence } = usePresence();
+  
   const {
     chatState,
     activeConversations,
@@ -22,7 +26,7 @@ export default function Chat() {
     closeChat,
     endChat,
     clearEndedReason,
-  } = useChat();
+  } = useChat({ presenceState, currentPresence });
 
   useEffect(() => {
     if (!user) {
