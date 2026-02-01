@@ -2,19 +2,24 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConversations, ConversationWithDetails } from './useConversations';
-import { usePresence, PresenceLogicalState } from './usePresence';
+import { PresenceLogicalState, PresenceEndReason } from './usePresence';
 
-export type ConversationEndReason = 'manual' | 'presence_end';
+export type ConversationEndReason = 'manual' | 'presence_end' | 'system_suspended';
 
 export interface ChatState {
   isActive: boolean;
   conversation: ConversationWithDetails | null;
   endedReason: ConversationEndReason | null;
   wasEndedByMe: boolean; // R3: Track who ended the conversation
+  /** Indicates if the chat can potentially be recovered (system issue, not human action) */
+  isRecoverable: boolean;
 }
 
 interface UseChatOptions {
-  presenceState: { logicalState: PresenceLogicalState };
+  presenceState: { 
+    logicalState: PresenceLogicalState;
+    endReason: PresenceEndReason | null;
+  };
   currentPresence: { place_id: string } | null;
 }
 
@@ -26,16 +31,19 @@ export function useChat(options?: UseChatOptions) {
     conversation: null,
     endedReason: null,
     wasEndedByMe: false,
+    isRecoverable: false,
   });
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const previousLogicalState = useRef<PresenceLogicalState | null>(null);
 
   // CRITICAL: React to presence state transitions
-  // When presenceState transitions to 'ended', immediately clear chat state
+  // RULE: Only 'ended' (human-initiated) clears chat definitively
+  // 'suspended' (technical) marks as recoverable
   useEffect(() => {
     if (!options?.presenceState) return;
     
     const currentLogicalState = options.presenceState.logicalState;
+    const endReason = options.presenceState.endReason;
     const prevState = previousLogicalState.current;
     
     // Track state transitions
@@ -43,32 +51,92 @@ export function useChat(options?: UseChatOptions) {
       console.log(`[useChat] Presence state transition: ${prevState} → ${currentLogicalState}`);
     }
     
-    // If transitioning to 'ended' from any other state, clear chat
+    // Handle 'ended' state - ONLY for human-initiated actions
     if (currentLogicalState === 'ended' && prevState !== 'ended' && chatState.isActive) {
-      console.log('[useChat] Presence ended - clearing active chat (state cleanup)');
-      setChatState({
-        isActive: false,
-        conversation: null,
-        endedReason: 'presence_end',
-        wasEndedByMe: true, // We lost presence, so technically we "left"
-      });
+      const isHumanAction = endReason?.isHumanInitiated ?? true;
+      
+      if (isHumanAction) {
+        console.log('[useChat] Presence ended (human action) - clearing active chat definitively');
+        setChatState({
+          isActive: false,
+          conversation: null,
+          endedReason: 'presence_end',
+          wasEndedByMe: true, // Human action = definitive
+          isRecoverable: false,
+        });
+      } else {
+        // Technical reason reaching 'ended' - should not happen with new logic
+        // but handle gracefully as recoverable
+        console.log('[useChat] Presence ended (technical) - marking as recoverable');
+        setChatState(prev => ({
+          ...prev,
+          isActive: false,
+          endedReason: 'system_suspended',
+          wasEndedByMe: false, // System issue, not user action
+          isRecoverable: true,
+        }));
+      }
+    }
+    
+    // Handle 'suspended' state - technical issue, potentially recoverable
+    if (currentLogicalState === 'suspended' && prevState === 'active' && chatState.isActive) {
+      console.log('[useChat] Presence suspended - marking chat as suspended (recoverable)');
+      setChatState(prev => ({
+        ...prev,
+        endedReason: 'system_suspended',
+        wasEndedByMe: false, // System suspension, not user action
+        isRecoverable: true, // Can be recovered if presence revalidates
+      }));
+    }
+    
+    // Handle recovery from 'suspended' back to 'active'
+    if (currentLogicalState === 'active' && prevState === 'suspended') {
+      console.log('[useChat] Presence reactivated - chat may recover');
+      // If chat was marked as suspended/recoverable, clear the suspension state
+      if (chatState.isRecoverable && chatState.endedReason === 'system_suspended') {
+        setChatState(prev => ({
+          ...prev,
+          endedReason: null,
+          isRecoverable: false,
+        }));
+      }
     }
     
     previousLogicalState.current = currentLogicalState;
-  }, [options?.presenceState?.logicalState, chatState.isActive]);
+  }, [options?.presenceState?.logicalState, options?.presenceState?.endReason, chatState.isActive, chatState.isRecoverable]);
 
-  // Also react to currentPresence becoming null (belt and suspenders)
+  // Belt and suspenders: if currentPresence is null AND endReason is human-initiated
+  // Only clear chat definitively for human actions
   useEffect(() => {
-    if (options && options.currentPresence === null && chatState.isActive) {
-      console.log('[useChat] currentPresence is null with active chat - forcing cleanup');
-      setChatState({
-        isActive: false,
-        conversation: null,
-        endedReason: 'presence_end',
-        wasEndedByMe: true,
-      });
+    if (!options) return;
+    
+    const { currentPresence, presenceState } = options;
+    const endReason = presenceState?.endReason;
+    
+    if (currentPresence === null && chatState.isActive) {
+      const isHumanAction = endReason?.isHumanInitiated ?? false;
+      
+      if (isHumanAction) {
+        console.log('[useChat] currentPresence is null (human action) - forcing cleanup');
+        setChatState({
+          isActive: false,
+          conversation: null,
+          endedReason: 'presence_end',
+          wasEndedByMe: true,
+          isRecoverable: false,
+        });
+      } else {
+        // Technical reason - keep conversation reference, mark as suspended
+        console.log('[useChat] currentPresence is null (technical) - marking suspended');
+        setChatState(prev => ({
+          ...prev,
+          endedReason: 'system_suspended',
+          wasEndedByMe: false,
+          isRecoverable: true,
+        }));
+      }
     }
-  }, [options?.currentPresence, chatState.isActive]);
+  }, [options?.currentPresence, options?.presenceState?.endReason, chatState.isActive]);
 
   // Subscribe to conversation changes (for real-time updates when other user ends chat)
   useEffect(() => {
@@ -101,6 +169,7 @@ export function useChat(options?: UseChatOptions) {
                 conversation: null,
                 endedReason: updated.encerrado_motivo || 'manual',
                 wasEndedByMe,
+                isRecoverable: false,
               });
             }
             
@@ -133,6 +202,7 @@ export function useChat(options?: UseChatOptions) {
       conversation,
       endedReason: null,
       wasEndedByMe: false,
+      isRecoverable: false,
     });
   }, []);
 
@@ -142,6 +212,7 @@ export function useChat(options?: UseChatOptions) {
       conversation: null,
       endedReason: null,
       wasEndedByMe: false,
+      isRecoverable: false,
     });
   }, []);
 
@@ -172,12 +243,13 @@ export function useChat(options?: UseChatOptions) {
 
       console.log('[useChat] Chat ended:', reason);
 
-      // R3: We ended it, so wasEndedByMe = true
+      // R3: We ended it explicitly, so wasEndedByMe = true, not recoverable
       setChatState({
         isActive: false,
         conversation: null,
         endedReason: reason,
         wasEndedByMe: true,
+        isRecoverable: false,
       });
 
       // Refetch to update conversation list
@@ -231,19 +303,20 @@ export function useChat(options?: UseChatOptions) {
       }
     }
 
-    // R3: We ended due to presence, so wasEndedByMe = true
+    // R3: We ended due to presence (human action), so wasEndedByMe = true
     setChatState({
       isActive: false,
       conversation: null,
       endedReason: 'presence_end',
       wasEndedByMe: true,
+      isRecoverable: false,
     });
 
     refetchConversations();
   }, [user, refetchConversations]);
 
   const clearEndedReason = useCallback(() => {
-    setChatState(prev => ({ ...prev, endedReason: null, wasEndedByMe: false }));
+    setChatState(prev => ({ ...prev, endedReason: null, wasEndedByMe: false, isRecoverable: false }));
   }, []);
 
   return {

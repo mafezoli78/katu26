@@ -15,8 +15,10 @@ import {
   PresenceLogicalState,
   PresenceEndReason,
   PresenceState,
+  PresenceEndReasonType,
   mapToSemanticReason,
   END_REASON_MESSAGES,
+  isHumanEndReason,
 } from '@/types/presence';
 
 // Re-export types for consumers
@@ -193,18 +195,21 @@ export function usePresence() {
           return { valid: true };
         }
       } else {
-        // No valid presence in backend - set ended state
+        // No valid presence in backend
         const wasActive = currentPresence !== null;
         setCurrentPresence(null);
         setCurrentPlace(null);
         
         // If we had presence and now it's gone during revalidation,
-        // it was lost in background
+        // mark as SUSPENDED (technical), not ended
+        // This allows potential recovery or proper human-initiated end
         if (wasActive && isRevalidation) {
+          setIsSuspended(true); // Mark as suspended, not ended
           setLastEndReason({
             type: 'presence_lost_background',
             message: END_REASON_MESSAGES.presence_lost_background,
             timestamp: new Date().toISOString(),
+            isHumanInitiated: false, // Technical reason, not human action
           });
         }
         return { valid: false };
@@ -216,12 +221,28 @@ export function usePresence() {
     }
   }, [user, currentPresence]);
 
-  // Derive the logical state
+  // Derive the logical state based on presence + reason semantics
+  // RULE: 'ended' only for human-initiated actions
   const deriveLogicalState = useCallback((): PresenceLogicalState => {
-    if (isSuspended) return 'suspended';
+    // Active presence = active state
     if (currentPresence && currentPresence.ativo) return 'active';
+    
+    // No presence - check why
+    if (isSuspended) return 'suspended';
+    
+    // Check if last reason was human-initiated
+    if (lastEndReason && isHumanEndReason(lastEndReason.type)) {
+      return 'ended';
+    }
+    
+    // Technical/unknown reason = suspended (recoverable)
+    if (lastEndReason && !lastEndReason.isHumanInitiated) {
+      return 'suspended';
+    }
+    
+    // No presence and no reason = ended (initial state or clean end)
     return 'ended';
-  }, [currentPresence, isSuspended]);
+  }, [currentPresence, isSuspended, lastEndReason]);
 
   // Computed presence state object
   const presenceState: PresenceState = {
@@ -307,7 +328,7 @@ export function usePresence() {
     const semanticReason = mapToSemanticReason(reason);
     const message = END_REASON_MESSAGES[semanticReason];
 
-    console.log(`[Presence] 🔚 Ending presence: ${reason} → ${semanticReason}`);
+    console.log(`[Presence] 🔚 Ending presence: ${reason} → ${semanticReason} (human-initiated)`);
 
     // Stop GPS monitoring
     stopGPSMonitoring();
@@ -346,10 +367,12 @@ export function usePresence() {
     setRemainingTime(0);
     presenceLocationRef.current = null;
     setIsSuspended(false);
+    // Mark as human-initiated = definitive end
     setLastEndReason({ 
       type: semanticReason, 
       message,
       timestamp: new Date().toISOString(),
+      isHumanInitiated: true, // Human action = definitive
     });
   }, [user, currentPresence, currentPlace, stopGPSMonitoring]);
   
