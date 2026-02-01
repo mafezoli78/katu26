@@ -11,6 +11,16 @@ import {
   calculateDistanceMeters,
   formatRemainingTime,
 } from '@/config/presence';
+import {
+  PresenceLogicalState,
+  PresenceEndReason,
+  PresenceState,
+  mapToSemanticReason,
+  END_REASON_MESSAGES,
+} from '@/types/presence';
+
+// Re-export types for consumers
+export type { PresenceLogicalState, PresenceEndReason, PresenceState };
 
 export interface Intention {
   id: string;
@@ -27,11 +37,6 @@ export interface Presence {
   inicio: string;
   ultima_atividade: string;
   ativo: boolean;
-}
-
-export interface PresenceEndReason {
-  type: 'manual' | 'expired' | 'gps_exit';
-  message: string;
 }
 
 export interface NearbyTemporaryPlace {
@@ -58,6 +63,11 @@ export function usePresence() {
   const [placesLoading, setPlacesLoading] = useState(false);
   const [remainingTime, setRemainingTime] = useState<number>(0);
   const [lastEndReason, setLastEndReason] = useState<PresenceEndReason | null>(null);
+  
+  // Logical state tracking
+  const [isRevalidating, setIsRevalidating] = useState(false);
+  const [lastValidatedAt, setLastValidatedAt] = useState<string | null>(null);
+  const [isSuspended, setIsSuspended] = useState(false);
 
   // Refs for GPS monitoring
   const gpsWatchIdRef = useRef<number | null>(null);
@@ -129,54 +139,96 @@ export function usePresence() {
     }
   };
 
-  const fetchCurrentPresence = async () => {
+  const fetchCurrentPresence = useCallback(async (isRevalidation = false) => {
     if (!user) {
       setCurrentPresence(null);
       setCurrentPlace(null);
-      return;
+      return { valid: false };
     }
 
-    const { data, error } = await supabase
-      .from('presence')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('ativo', true)
-      .maybeSingle();
+    if (isRevalidation) {
+      setIsRevalidating(true);
+    }
 
-    if (!error && data) {
-      const lastActivity = new Date(data.ultima_atividade).getTime();
-      const now = Date.now();
+    try {
+      const { data, error } = await supabase
+        .from('presence')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('ativo', true)
+        .maybeSingle();
 
-      if (now - lastActivity > PRESENCE_DURATION_MS) {
-        await endPresence('expired');
-      } else {
-        setCurrentPresence(data);
-        setRemainingTime(PRESENCE_DURATION_MS - (now - lastActivity));
+      if (!error && data) {
+        const lastActivity = new Date(data.ultima_atividade).getTime();
+        const now = Date.now();
 
-        // Fetch the place details using place_id (source of truth)
-        const placeId = data.place_id;
-        if (placeId) {
-          const { data: placeData } = await supabase
-            .from('places')
-            .select('*')
-            .eq('id', placeId)
-            .maybeSingle();
+        if (now - lastActivity > PRESENCE_DURATION_MS) {
+          await endPresence('expired');
+          return { valid: false };
+        } else {
+          setCurrentPresence(data);
+          setRemainingTime(PRESENCE_DURATION_MS - (now - lastActivity));
+          setLastValidatedAt(new Date().toISOString());
+          setIsSuspended(false);
 
-          if (placeData) {
-            setCurrentPlace(placeData as Place);
-            presenceLocationRef.current = {
-              lat: placeData.latitude,
-              lng: placeData.longitude,
-            };
-            // Start GPS monitoring when presence is active
-            startGPSMonitoring();
+          // Fetch the place details using place_id (source of truth)
+          const placeId = data.place_id;
+          if (placeId) {
+            const { data: placeData } = await supabase
+              .from('places')
+              .select('*')
+              .eq('id', placeId)
+              .maybeSingle();
+
+            if (placeData) {
+              setCurrentPlace(placeData as Place);
+              presenceLocationRef.current = {
+                lat: placeData.latitude,
+                lng: placeData.longitude,
+              };
+              // Start GPS monitoring when presence is active
+              startGPSMonitoring();
+            }
           }
+          return { valid: true };
         }
+      } else {
+        // No valid presence in backend - set ended state
+        const wasActive = currentPresence !== null;
+        setCurrentPresence(null);
+        setCurrentPlace(null);
+        
+        // If we had presence and now it's gone during revalidation,
+        // it was lost in background
+        if (wasActive && isRevalidation) {
+          setLastEndReason({
+            type: 'presence_lost_background',
+            message: END_REASON_MESSAGES.presence_lost_background,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        return { valid: false };
       }
-    } else {
-      setCurrentPresence(null);
-      setCurrentPlace(null);
+    } finally {
+      if (isRevalidation) {
+        setIsRevalidating(false);
+      }
     }
+  }, [user, currentPresence]);
+
+  // Derive the logical state
+  const deriveLogicalState = useCallback((): PresenceLogicalState => {
+    if (isSuspended) return 'suspended';
+    if (currentPresence && currentPresence.ativo) return 'active';
+    return 'ended';
+  }, [currentPresence, isSuspended]);
+
+  // Computed presence state object
+  const presenceState: PresenceState = {
+    logicalState: deriveLogicalState(),
+    endReason: lastEndReason,
+    isRevalidating,
+    lastValidatedAt,
   };
 
   // ============= GPS Monitoring =============
@@ -204,7 +256,8 @@ export function usePresence() {
 
       if (outsideRadiusCountRef.current >= GPS_EXIT_THRESHOLD_COUNT) {
         console.log('[GPS] 🚪 Exit confirmed - ending presence');
-        endPresence('gps_exit');
+        // Use ref to avoid stale closure
+        endPresenceRef.current?.('gps_exit');
       }
     } else {
       // Reset counter when back inside
@@ -214,6 +267,9 @@ export function usePresence() {
       outsideRadiusCountRef.current = 0;
     }
   }, [currentPresence]);
+  
+  // Ref to avoid stale closure in GPS callback
+  const endPresenceRef = useRef<((reason: 'manual' | 'expired' | 'gps_exit') => Promise<void>) | null>(null);
 
   const startGPSMonitoring = useCallback(() => {
     if (!navigator.geolocation || gpsWatchIdRef.current !== null) return;
@@ -245,16 +301,13 @@ export function usePresence() {
 
   // ============= Presence Actions =============
 
-  const endPresence = async (reason: 'manual' | 'expired' | 'gps_exit') => {
+  const endPresence = useCallback(async (reason: 'manual' | 'expired' | 'gps_exit') => {
     if (!user) return;
 
-    const messages = {
-      manual: 'Você saiu do local',
-      expired: 'Sua presença expirou',
-      gps_exit: 'Você saiu da área do local',
-    };
+    const semanticReason = mapToSemanticReason(reason);
+    const message = END_REASON_MESSAGES[semanticReason];
 
-    console.log(`[Presence] 🔚 Ending presence: ${reason}`);
+    console.log(`[Presence] 🔚 Ending presence: ${reason} → ${semanticReason}`);
 
     // Stop GPS monitoring
     stopGPSMonitoring();
@@ -292,8 +345,18 @@ export function usePresence() {
     setCurrentPlace(null);
     setRemainingTime(0);
     presenceLocationRef.current = null;
-    setLastEndReason({ type: reason, message: messages[reason] });
-  };
+    setIsSuspended(false);
+    setLastEndReason({ 
+      type: semanticReason, 
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  }, [user, currentPresence, currentPlace, stopGPSMonitoring]);
+  
+  // Keep ref updated for GPS callback
+  useEffect(() => {
+    endPresenceRef.current = endPresence;
+  }, [endPresence]);
 
   // Activate presence using centralized RPC (atomic, with concurrency lock)
   // The RPC handles: cleanup of previous presence, wave expiration, and new presence creation
@@ -404,20 +467,48 @@ export function usePresence() {
 
   // ============= Effects =============
 
-  // Visibility change handler - refetch presence when returning from background
+  // Visibility change handler - set suspended on hide, revalidate on return
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && user && hasFetchedOnce) {
-        console.log('[usePresence] App returned to foreground - refetching presence');
-        fetchCurrentPresence();
+      if (document.visibilityState === 'hidden') {
+        // Mark as suspended when going to background
+        if (currentPresence) {
+          console.log('[usePresence] App going to background - marking as suspended');
+          setIsSuspended(true);
+        }
+      } else if (document.visibilityState === 'visible' && user && hasFetchedOnce) {
+        console.log('[usePresence] App returned to foreground - revalidating presence');
+        // Revalidate presence from backend
+        fetchCurrentPresence(true);
+      }
+    };
+
+    // Also handle focus for iOS PWA fallback
+    const handleFocus = () => {
+      if (user && hasFetchedOnce) {
+        console.log('[usePresence] Window focus - revalidating presence');
+        fetchCurrentPresence(true);
+      }
+    };
+
+    // Also handle pageshow for bfcache restoration
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && user && hasFetchedOnce) {
+        console.log('[usePresence] Page restored from bfcache - revalidating presence');
+        fetchCurrentPresence(true);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handlePageShow);
+    
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handlePageShow);
     };
-  }, [user, hasFetchedOnce]);
+  }, [user, hasFetchedOnce, currentPresence, fetchCurrentPresence]);
 
   // Initial fetch - only runs once per user session
   useEffect(() => {
@@ -480,6 +571,9 @@ export function usePresence() {
     placesLoading,
     remainingTime,
     lastEndReason,
+    
+    // Logical state (new model)
+    presenceState,
     
     // Config (exposed for UI)
     presenceRadiusMeters: PRESENCE_RADIUS_METERS,

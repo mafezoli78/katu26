@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConversations, ConversationWithDetails } from './useConversations';
+import { usePresence, PresenceLogicalState } from './usePresence';
 
 export type ConversationEndReason = 'manual' | 'presence_end';
 
@@ -12,7 +13,12 @@ export interface ChatState {
   wasEndedByMe: boolean; // R3: Track who ended the conversation
 }
 
-export function useChat() {
+interface UseChatOptions {
+  presenceState: { logicalState: PresenceLogicalState };
+  currentPresence: { place_id: string } | null;
+}
+
+export function useChat(options?: UseChatOptions) {
   const { user } = useAuth();
   const { conversations, refetch: refetchConversations, deactivateConversation } = useConversations();
   const [chatState, setChatState] = useState<ChatState>({
@@ -22,6 +28,47 @@ export function useChat() {
     wasEndedByMe: false,
   });
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const previousLogicalState = useRef<PresenceLogicalState | null>(null);
+
+  // CRITICAL: React to presence state transitions
+  // When presenceState transitions to 'ended', immediately clear chat state
+  useEffect(() => {
+    if (!options?.presenceState) return;
+    
+    const currentLogicalState = options.presenceState.logicalState;
+    const prevState = previousLogicalState.current;
+    
+    // Track state transitions
+    if (prevState !== null && prevState !== currentLogicalState) {
+      console.log(`[useChat] Presence state transition: ${prevState} → ${currentLogicalState}`);
+    }
+    
+    // If transitioning to 'ended' from any other state, clear chat
+    if (currentLogicalState === 'ended' && prevState !== 'ended' && chatState.isActive) {
+      console.log('[useChat] Presence ended - clearing active chat (state cleanup)');
+      setChatState({
+        isActive: false,
+        conversation: null,
+        endedReason: 'presence_end',
+        wasEndedByMe: true, // We lost presence, so technically we "left"
+      });
+    }
+    
+    previousLogicalState.current = currentLogicalState;
+  }, [options?.presenceState?.logicalState, chatState.isActive]);
+
+  // Also react to currentPresence becoming null (belt and suspenders)
+  useEffect(() => {
+    if (options && options.currentPresence === null && chatState.isActive) {
+      console.log('[useChat] currentPresence is null with active chat - forcing cleanup');
+      setChatState({
+        isActive: false,
+        conversation: null,
+        endedReason: 'presence_end',
+        wasEndedByMe: true,
+      });
+    }
+  }, [options?.currentPresence, chatState.isActive]);
 
   // Subscribe to conversation changes (for real-time updates when other user ends chat)
   useEffect(() => {
