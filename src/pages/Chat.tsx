@@ -50,8 +50,9 @@ export default function Chat() {
   }, [conversationIdParam, activeConversations, chatState.isActive, openChat, setSearchParams]);
 
   // R3: Show toast when chat ends with correct feedback message
+  // IMPORTANT: Don't show toast for system_suspended (recoverable) states
   useEffect(() => {
-    if (chatState.endedReason) {
+    if (chatState.endedReason && chatState.endedReason !== 'system_suspended') {
       // R3: Differentiate messages based on who ended and why
       const messages = {
         manual_self: 'Conversa encerrada por você',
