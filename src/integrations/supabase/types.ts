@@ -361,6 +361,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_blocks: {
+        Row: {
+          blocked_user_id: string
+          criado_em: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          blocked_user_id: string
+          criado_em?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          blocked_user_id?: string
+          criado_em?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_blocks_blocked_user_id_fkey"
+            columns: ["blocked_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_blocks_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_interests: {
         Row: {
           criado_em: string
@@ -383,6 +419,55 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "user_interests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_mutes: {
+        Row: {
+          criado_em: string
+          expira_em: string
+          id: string
+          muted_user_id: string
+          place_id: string | null
+          user_id: string
+        }
+        Insert: {
+          criado_em?: string
+          expira_em?: string
+          id?: string
+          muted_user_id: string
+          place_id?: string | null
+          user_id: string
+        }
+        Update: {
+          criado_em?: string
+          expira_em?: string
+          id?: string
+          muted_user_id?: string
+          place_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_mutes_muted_user_id_fkey"
+            columns: ["muted_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_mutes_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_mutes_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -490,8 +575,20 @@ export type Database = {
           nome: string
         }[]
       }
+      get_active_mute_for_pair: {
+        Args: { p_muted_user_id: string; p_user_id: string }
+        Returns: string
+      }
       get_user_active_location_id: { Args: never; Returns: string }
       get_user_active_place_id: { Args: never; Returns: string }
+      is_user_blocked: {
+        Args: { p_other_user_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_user_muted: {
+        Args: { p_other_user_id: string; p_user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
