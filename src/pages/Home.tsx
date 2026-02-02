@@ -4,35 +4,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePresence } from '@/hooks/usePresence';
 import { usePeopleNearby } from '@/hooks/usePeopleNearby';
 import { useWaves } from '@/hooks/useWaves';
+import { useInteractionData } from '@/hooks/useInteractionData';
 import { MobileLayout } from '@/components/layout/MobileLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { MapPin, Clock, RefreshCw, LogOut, Sparkles, Wifi, Store, Users } from 'lucide-react';
-
-// Waving hand icon
-function WavingHand({ className }: { className?: string }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M7 11.5V14c0 2.5 2 4.5 5 6c3-1.5 5-3.5 5-6v-2.5" />
-      <path d="M11.5 6.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v4.5" />
-      <path d="M14.5 7.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v3" />
-      <path d="M17.5 9.5c0-1-0.5-2-1.5-2s-1.5 1-1.5 2v2" />
-      <path d="M8.5 11V6c0-1-0.5-2-1.5-2S5.5 5 5.5 6v8c0 0.5 0 1.5 0.5 2.5" />
-    </svg>
-  );
-}
+import { PersonCard } from '@/components/home/PersonCard';
+import { Clock, RefreshCw, LogOut, Wifi, Store, Users } from 'lucide-react';
 
 export default function Home() {
   const { user } = useAuth();
@@ -46,11 +25,20 @@ export default function Home() {
     deactivatePresence,
     lastEndReason,
     clearLastEndReason,
-    presenceRadiusMeters,
     loading: presenceLoading 
   } = usePresence();
-  const { people, loading: peopleLoading, refetch: refetchPeople, hasActiveConversationWith } = usePeopleNearby(currentPlace?.id || null);
-  const { sendWave, hasWavedTo, refetch: refetchWaves } = useWaves();
+  const { people, loading: peopleLoading, refetch: refetchPeople } = usePeopleNearby(currentPlace?.id || null);
+  const { sendWave, refetch: refetchWaves } = useWaves();
+  
+  // Buscar todos os dados de interação para o local atual
+  const {
+    sentWaves,
+    receivedWaves,
+    conversations,
+    activeMutes,
+    blocks,
+    refetch: refetchInteractionData,
+  } = useInteractionData(currentPlace?.id || null);
 
   useEffect(() => {
     if (!user) {
@@ -62,9 +50,10 @@ export default function Home() {
   useEffect(() => {
     if (lastEndReason) {
       refetchWaves();
+      refetchInteractionData();
       clearLastEndReason();
     }
-  }, [lastEndReason, clearLastEndReason, refetchWaves]);
+  }, [lastEndReason, clearLastEndReason, refetchWaves, refetchInteractionData]);
 
   const handleWave = async (toUserId: string) => {
     if (!currentPlace) return;
@@ -74,6 +63,8 @@ export default function Home() {
       toast({ variant: 'destructive', title: error.message });
     } else {
       toast({ title: 'Aceno enviado! 👋' });
+      // Refetch para atualizar estado do botão
+      refetchInteractionData();
     }
   };
 
@@ -109,6 +100,17 @@ export default function Home() {
   }
 
   const isTemporaryPlace = currentPlace.is_temporary;
+
+  // Filtrar pessoas bloqueadas no nível da lista (redundância de segurança)
+  // O PersonCard também verifica isVisible, mas filtramos aqui para não renderizar cards vazios
+  const visiblePeople = people.filter(person => {
+    const isBlocked = blocks.some(
+      b =>
+        (b.user_id === user?.id && b.blocked_user_id === person.id) ||
+        (b.user_id === person.id && b.blocked_user_id === user?.id)
+    );
+    return !isBlocked;
+  });
 
   return (
     <MobileLayout>
@@ -170,10 +172,18 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-katu-blue" />
             <h2 className="text-lg font-semibold">
-              Pessoas aqui ({people.length})
+              Pessoas aqui ({visiblePeople.length})
             </h2>
           </div>
-          <Button variant="ghost" size="sm" onClick={refetchPeople} className="h-9 w-9 p-0 rounded-lg">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => {
+              refetchPeople();
+              refetchInteractionData();
+            }} 
+            className="h-9 w-9 p-0 rounded-lg"
+          >
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
@@ -181,7 +191,7 @@ export default function Home() {
         {/* People list */}
         {peopleLoading ? (
           <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-        ) : people.length === 0 ? (
+        ) : visiblePeople.length === 0 ? (
           <Card className="border-0 shadow-sm">
             <CardContent className="py-10 text-center">
               <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
@@ -193,68 +203,19 @@ export default function Home() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {people.map((person) => {
-              const alreadyWaved = hasWavedTo(person.id, currentPlace.id);
-              // R1: Check if user has active conversation (shouldn't appear, but safety check)
-              const hasConversation = hasActiveConversationWith(person.id);
-              const age = person.profile.data_nascimento 
-                ? new Date().getFullYear() - new Date(person.profile.data_nascimento).getFullYear()
-                : null;
-
-              // R1: Users with active conversations should not be shown (filtered in hook)
-              // This is a safety check in case the filter misses something
-              if (hasConversation) {
-                return null;
-              }
-
-              return (
-                <Card key={person.id} className="border-0 shadow-sm overflow-hidden">
-                  <CardContent className="p-4">
-                    <div className="flex gap-3">
-                      <Avatar className="h-14 w-14 ring-2 ring-background shadow">
-                        <AvatarImage src={person.profile.foto_url || undefined} />
-                        <AvatarFallback className="bg-katu-blue text-white text-lg font-semibold">
-                          {person.profile.nome?.[0]?.toUpperCase() || '?'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold truncate">
-                            {person.profile.nome}
-                            {age && <span className="text-muted-foreground font-normal">, {age}</span>}
-                          </h3>
-                        </div>
-                        {/* Exibir assunto_atual OU bio, nunca ambos */}
-                        {person.assuntoAtual ? (
-                          <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                            <span className="font-medium text-foreground">Aqui:</span> {person.assuntoAtual}
-                          </p>
-                        ) : person.profile.bio ? (
-                          <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                            <span className="font-medium text-foreground">Sobre mim:</span> {person.profile.bio}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {/* Wave button - R1: Hidden for users with active conversations */}
-                    <Button
-                      className={`w-full mt-4 h-11 rounded-xl font-semibold ${
-                        alreadyWaved 
-                          ? 'bg-muted text-muted-foreground' 
-                          : 'bg-accent text-accent-foreground hover:bg-accent/90'
-                      }`}
-                      variant={alreadyWaved ? 'secondary' : 'default'}
-                      disabled={alreadyWaved}
-                      onClick={() => handleWave(person.id)}
-                    >
-                      <WavingHand className={`h-5 w-5 mr-2 ${!alreadyWaved ? 'animate-wave' : ''}`} />
-                      {alreadyWaved ? 'Você já acenou' : 'Acenar'}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {visiblePeople.map((person) => (
+              <PersonCard
+                key={person.id}
+                person={person}
+                placeId={currentPlace.id}
+                sentWaves={sentWaves}
+                receivedWaves={receivedWaves}
+                conversations={conversations}
+                activeMutes={activeMutes}
+                blocks={blocks}
+                onWave={handleWave}
+              />
+            ))}
           </div>
         )}
       </div>
