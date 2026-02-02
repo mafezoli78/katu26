@@ -14,6 +14,16 @@ import { useAuth } from '@/contexts/AuthContext';
  * 5 - ENDED_BY_OTHER: Outro encerrou → "Interação indisponível" (inativo)
  * 6 - MUTED: Silenciei este usuário → "Silenciado" (24h/local)
  * 7 - BLOCKED: Bloqueei ou fui bloqueado → Usuário invisível (não deve aparecer)
+ * 
+ * REGRA DE PRECEDÊNCIA:
+ * MUTED tem precedência sobre estados de cooldown (ENDED_BY_ME/OTHER).
+ * Se o usuário está silenciado, permanece silenciado mesmo que o cooldown
+ * da conversa tenha expirado, até que o mute expire (24h) ou seja removido.
+ * 
+ * DÍVIDA TÉCNICA:
+ * Este hook tem forte acoplamento com o modelo atual de `conversations`.
+ * Se o modelo evoluir (ex: múltiplas conversas por par/local), será
+ * necessário refatorar a lógica de busca e determinação de estado.
  */
 
 export enum InteractionState {
@@ -44,12 +54,15 @@ export interface InteractionStateResult {
   isVisible: boolean;
 }
 
+/**
+ * IMPORTANTE: Todos os dados devem ser normalizados para usar `place_id` antes
+ * de serem passados para este hook. O campo legado `location_id` não é suportado.
+ */
 interface Wave {
   id: string;
   de_user_id: string;
   para_user_id: string;
-  place_id: string | null;
-  location_id?: string;
+  place_id: string;
   status: string;
   expires_at: string | null;
 }
@@ -80,9 +93,15 @@ interface Block {
 interface UseInteractionStateParams {
   otherUserId: string;
   placeId: string;
-  /** Acenos enviados pelo usuário atual (pendentes, não expirados) */
+  /** 
+   * Acenos enviados pelo usuário atual (pendentes, não expirados).
+   * IMPORTANTE: Deve conter apenas `place_id`, já normalizado.
+   */
   sentWaves: Wave[];
-  /** Acenos recebidos pelo usuário atual (pendentes, não expirados) */
+  /** 
+   * Acenos recebidos pelo usuário atual (pendentes, não expirados).
+   * IMPORTANTE: Deve conter apenas `place_id`, já normalizado.
+   */
   receivedWaves: Wave[];
   /** Todas as conversas relevantes (ativas e inativas com reinteracao_permitida_em) */
   conversations: Conversation[];
@@ -235,10 +254,11 @@ export function useInteractionState({
     // 4. ACENOS - verificar pendentes neste local
     // =====================================================
     // Aceno que EU recebi deste usuário
+    // NOTA: Dados devem ser normalizados para place_id antes de passar para o hook
     const receivedWave = receivedWaves.find(
       w =>
         w.de_user_id === otherUserId &&
-        (w.place_id === placeId || w.location_id === placeId) &&
+        w.place_id === placeId &&
         w.status === 'pending' &&
         (!w.expires_at || new Date(w.expires_at) > now)
     );
@@ -257,10 +277,11 @@ export function useInteractionState({
     }
 
     // Aceno que EU enviei para este usuário
+    // NOTA: Dados devem ser normalizados para place_id antes de passar para o hook
     const sentWave = sentWaves.find(
       w =>
         w.para_user_id === otherUserId &&
-        (w.place_id === placeId || w.location_id === placeId) &&
+        w.place_id === placeId &&
         w.status === 'pending' &&
         (!w.expires_at || new Date(w.expires_at) > now)
     );
