@@ -101,16 +101,8 @@ export default function Home() {
 
   const isTemporaryPlace = currentPlace.is_temporary;
 
-  // Filtrar pessoas bloqueadas no nível da lista (redundância de segurança)
-  // O PersonCard também verifica isVisible, mas filtramos aqui para não renderizar cards vazios
-  const visiblePeople = people.filter(person => {
-    const isBlocked = blocks.some(
-      b =>
-        (b.user_id === user?.id && b.blocked_user_id === person.id) ||
-        (b.user_id === person.id && b.blocked_user_id === user?.id)
-    );
-    return !isBlocked;
-  });
+  // A Home NÃO filtra por interação - apenas mapeia people → PersonCard
+  // Visibilidade é controlada EXCLUSIVAMENTE pelo useInteractionState no PersonCard
 
   return (
     <MobileLayout>
@@ -172,7 +164,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-katu-blue" />
             <h2 className="text-lg font-semibold">
-              Pessoas aqui ({visiblePeople.length})
+              Pessoas aqui ({people.length})
             </h2>
           </div>
           <Button 
@@ -191,7 +183,7 @@ export default function Home() {
         {/* People list */}
         {peopleLoading ? (
           <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-        ) : visiblePeople.length === 0 ? (
+        ) : people.length === 0 ? (
           <Card className="border-0 shadow-sm">
             <CardContent className="py-10 text-center">
               <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
@@ -203,7 +195,7 @@ export default function Home() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {visiblePeople.map((person) => (
+            {people.map((person) => (
               <PersonCard
                 key={person.id}
                 person={person}
