@@ -1,6 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/hooks/use-toast';
+import { ToastAction } from '@/components/ui/toast';
+import { MessageCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export interface Conversation {
   id: string;
@@ -29,8 +33,12 @@ export interface ConversationWithDetails extends Conversation {
 
 export function useConversations() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // Track known conversation IDs to detect truly new ones
+  const knownConversationIds = useRef<Set<string>>(new Set());
 
   const fetchConversations = useCallback(async () => {
     if (!user) {
@@ -87,6 +95,9 @@ export function useConversations() {
         }
       }
 
+      // Update known IDs after initial fetch
+      knownConversationIds.current = new Set(conversationsWithDetails.map(c => c.id));
+      
       setConversations(conversationsWithDetails);
     } catch (error) {
       console.error('Error fetching conversations:', error);
@@ -99,7 +110,89 @@ export function useConversations() {
     fetchConversations();
   }, [fetchConversations]);
 
+  // Subscribe to new conversations via Realtime
+  // This ensures BOTH users get notified when a conversation is created/activated
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('new-conversations')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversations',
+        },
+        async (payload) => {
+          const newConv = payload.new as Conversation;
+          
+          // Check if this conversation involves the current user
+          const involvesMe = newConv.user1_id === user.id || newConv.user2_id === user.id;
+          if (!involvesMe || !newConv.ativo) return;
+          
+          // Check if we already know about this conversation (avoid duplicate toasts)
+          if (knownConversationIds.current.has(newConv.id)) {
+            console.log('[useConversations] Already knew about conversation:', newConv.id);
+            return;
+          }
+          
+          console.log('[useConversations] New conversation detected:', newConv.id);
+          
+          // Add to known IDs immediately to prevent duplicates
+          knownConversationIds.current.add(newConv.id);
+          
+          // Fetch details for the toast
+          const otherUserId = newConv.user1_id === user.id ? newConv.user2_id : newConv.user1_id;
+          const [profileRes, placeRes] = await Promise.all([
+            supabase
+              .from('profiles')
+              .select('id, nome, foto_url')
+              .eq('id', otherUserId)
+              .single(),
+            supabase
+              .from('places')
+              .select('id, nome')
+              .eq('id', newConv.place_id)
+              .single()
+          ]);
+          
+          const otherUserName = profileRes.data?.nome || 'Alguém';
+          
+          // Show toast notification for BOTH users
+          toast({
+            title: 'Chat iniciado! 🎉',
+            description: `Você agora pode conversar com ${otherUserName}`,
+            action: (
+              <ToastAction 
+                altText="Abrir conversa"
+                onClick={() => navigate(`/chat?conversationId=${newConv.id}`)}
+              >
+                <MessageCircle className="h-4 w-4 mr-1" />
+                Abrir chat
+              </ToastAction>
+            )
+          });
+          
+          // Refetch to update the list with full details
+          fetchConversations();
+        }
+      )
+      .subscribe();
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [user, fetchConversations, navigate]);
+
   const addConversation = (conversation: Conversation) => {
+    // Mark as known to prevent duplicate toast from realtime
+    knownConversationIds.current.add(conversation.id);
     // This is used to add a conversation optimistically after accepting a wave
     // The full details will be fetched on next refetch
     fetchConversations();
