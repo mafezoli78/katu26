@@ -222,16 +222,18 @@ export function usePresence() {
   }, [user, currentPresence]);
 
   // Derive the logical state based on presence + reason semantics
-  // RULE: 'ended' only for human-initiated actions
+  // RULE: 'ended' ONLY via explicit endPresence() call with human-initiated reason
+  // RULE: Technical failures, background, lifecycle = always 'suspended'
   const deriveLogicalState = useCallback((): PresenceLogicalState => {
-    // Active presence = active state
+    // Active presence = active state (most common path)
     if (currentPresence && currentPresence.ativo) return 'active';
     
-    // No presence - check why
+    // Explicitly marked as suspended = suspended
     if (isSuspended) return 'suspended';
     
-    // Check if last reason was human-initiated
-    if (lastEndReason && isHumanEndReason(lastEndReason.type)) {
+    // Check if last reason was human-initiated AND marked as such
+    // Both conditions must be true to transition to 'ended'
+    if (lastEndReason && lastEndReason.isHumanInitiated && isHumanEndReason(lastEndReason.type)) {
       return 'ended';
     }
     
@@ -240,8 +242,20 @@ export function usePresence() {
       return 'suspended';
     }
     
-    // No presence and no reason = ended (initial state or clean end)
-    return 'ended';
+    // No presence and no reason = edge case
+    // Log for debugging but default to 'suspended' to avoid false 'ended'
+    if (!currentPresence && !lastEndReason) {
+      console.warn('[usePresence] ⚠️ Unexpected state: no presence and no reason. Defaulting to suspended.');
+      return 'suspended';
+    }
+    
+    // Fallback: any unhandled case = suspended (never default to 'ended')
+    console.error('[usePresence] 🚨 Impossible state reached in deriveLogicalState:', {
+      hasPresence: !!currentPresence,
+      isSuspended,
+      lastEndReason,
+    });
+    return 'suspended';
   }, [currentPresence, isSuspended, lastEndReason]);
 
   // Computed presence state object
