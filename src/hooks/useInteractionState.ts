@@ -160,7 +160,7 @@ export function useInteractionState({
         state: InteractionState.BLOCKED,
         stateName: 'BLOCKED',
         button: { label: 'Bloqueado', disabled: true, action: 'none' },
-        isVisible: false, // Usuário não deve aparecer na lista
+        isVisible: false, // ÚNICO estado que oculta o card - bloqueio bilateral
       };
     }
 
