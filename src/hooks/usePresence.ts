@@ -79,6 +79,13 @@ export function usePresence() {
   const gpsWatchIdRef = useRef<number | null>(null);
   const outsideRadiusCountRef = useRef(0);
   const presenceLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  
+  // CRITICAL: Track if baseline position was established
+  // GPS exit should only trigger AFTER user was confirmed inside at least once
+  const baselineEstablishedRef = useRef(false);
+  // Grace period: ignore first N readings to allow user to arrive at location
+  const initialReadingsCountRef = useRef(0);
+  const GPS_GRACE_READINGS = 3; // Ignore first 3 readings (gives ~90 seconds for user to arrive)
 
   const fetchIntentions = async () => {
     const { data, error } = await supabase
@@ -337,6 +344,24 @@ export function usePresence() {
 
     const distance = calculateDistanceMeters(latitude, longitude, locLat, locLng);
     const isInside = distance <= PRESENCE_RADIUS_METERS;
+    
+    // CRITICAL: Grace period for initial readings
+    // This allows users to select a place they're walking towards
+    if (!baselineEstablishedRef.current) {
+      initialReadingsCountRef.current++;
+      console.log(`[GPS] 📍 Grace period reading ${initialReadingsCountRef.current}/${GPS_GRACE_READINGS} - ${Math.round(distance)}m from place`);
+      
+      // During grace period, only establish baseline if user is inside
+      if (isInside) {
+        baselineEstablishedRef.current = true;
+        console.log('[GPS] ✅ Baseline established - user confirmed inside radius');
+      } else if (initialReadingsCountRef.current >= GPS_GRACE_READINGS) {
+        // After grace period, establish baseline anyway (user chose to be at this place)
+        baselineEstablishedRef.current = true;
+        console.log('[GPS] ⚠️ Grace period ended - baseline established (user may be approaching)');
+      }
+      return; // Don't trigger exit during grace period
+    }
 
     console.log(`[GPS] Distance from place: ${Math.round(distance)}m (radius: ${PRESENCE_RADIUS_METERS}m) - ${isInside ? '✅ Inside' : '⚠️ Outside'}`);
 
@@ -362,7 +387,10 @@ export function usePresence() {
     if (!navigator.geolocation || gpsWatchIdRef.current !== null) return;
 
     console.log('[GPS] 📍 Starting position monitoring...');
+    // Reset all counters for fresh monitoring session
     outsideRadiusCountRef.current = 0;
+    baselineEstablishedRef.current = false;
+    initialReadingsCountRef.current = 0;
 
     gpsWatchIdRef.current = navigator.geolocation.watchPosition(
       checkGPSPosition,
@@ -383,6 +411,8 @@ export function usePresence() {
       navigator.geolocation.clearWatch(gpsWatchIdRef.current);
       gpsWatchIdRef.current = null;
       outsideRadiusCountRef.current = 0;
+      baselineEstablishedRef.current = false;
+      initialReadingsCountRef.current = 0;
     }
   }, []);
 
