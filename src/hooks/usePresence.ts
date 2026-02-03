@@ -141,10 +141,15 @@ export function usePresence() {
     }
   };
 
+  // Refs for functions used inside fetchCurrentPresence to avoid circular deps
+  const endPresenceRef = useRef<((reason: 'manual' | 'expired' | 'gps_exit') => Promise<void>) | null>(null);
+  const startGPSMonitoringRef = useRef<(() => void) | null>(null);
+
   const fetchCurrentPresence = useCallback(async (isRevalidation = false) => {
     if (!user) {
       setCurrentPresence(null);
       setCurrentPlace(null);
+      setIsSuspended(false);
       return { valid: false };
     }
 
@@ -164,12 +169,28 @@ export function usePresence() {
         .eq('ativo', true)
         .maybeSingle();
 
-      if (!error && data) {
+      if (error) {
+        console.error('[usePresence] ❌ Error fetching presence:', error);
+        // On error: don't crash, set safe state
+        if (!isRevalidation) {
+          setCurrentPresence(null);
+          setCurrentPlace(null);
+        }
+        setIsSuspended(false);
+        return { valid: false };
+      }
+
+      if (data) {
         const lastActivity = new Date(data.ultima_atividade).getTime();
         const now = Date.now();
 
         if (now - lastActivity > PRESENCE_DURATION_MS) {
-          await endPresence('expired');
+          // Presence expired - end it properly using ref
+          // NOTE: Don't await here to prevent blocking; endPresence handles cleanup
+          endPresenceRef.current?.('expired').catch(err => console.error('[usePresence] Error ending expired presence:', err));
+          setCurrentPresence(null);
+          setCurrentPlace(null);
+          setIsSuspended(false);
           return { valid: false };
         } else {
           setCurrentPresence(data);
@@ -180,20 +201,25 @@ export function usePresence() {
           // Fetch the place details using place_id (source of truth)
           const placeId = data.place_id;
           if (placeId) {
-            const { data: placeData } = await supabase
-              .from('places')
-              .select('*')
-              .eq('id', placeId)
-              .maybeSingle();
+            try {
+              const { data: placeData } = await supabase
+                .from('places')
+                .select('*')
+                .eq('id', placeId)
+                .maybeSingle();
 
-            if (placeData) {
-              setCurrentPlace(placeData as Place);
-              presenceLocationRef.current = {
-                lat: placeData.latitude,
-                lng: placeData.longitude,
-              };
-              // Start GPS monitoring when presence is active
-              startGPSMonitoring();
+              if (placeData) {
+                setCurrentPlace(placeData as Place);
+                presenceLocationRef.current = {
+                  lat: placeData.latitude,
+                  lng: placeData.longitude,
+                };
+                // Start GPS monitoring when presence is active (using ref)
+                startGPSMonitoringRef.current?.();
+              }
+            } catch (placeError) {
+              console.error('[usePresence] Error fetching place details:', placeError);
+              // Place fetch failed but presence is valid - continue
             }
           }
           console.log('[usePresence] ✅ Presence validated successfully');
@@ -214,15 +240,26 @@ export function usePresence() {
             isHumanInitiated: false, // Technical reason, not human action
           });
           // DO NOT set currentPresence to null here during revalidation
+          // But DO clear the revalidating flag so UI can proceed
           return { valid: false };
         } else {
           // Initial fetch (not revalidation) - safe to set null
           console.log('[usePresence] ℹ️ Initial fetch found no presence');
           setCurrentPresence(null);
           setCurrentPlace(null);
+          setIsSuspended(false);
           return { valid: false };
         }
       }
+    } catch (unexpectedError) {
+      // Catch-all for any unexpected errors
+      console.error('[usePresence] 🚨 Unexpected error in fetchCurrentPresence:', unexpectedError);
+      if (!isRevalidation) {
+        setCurrentPresence(null);
+        setCurrentPlace(null);
+      }
+      setIsSuspended(false);
+      return { valid: false };
     } finally {
       if (isRevalidation) {
         setIsRevalidating(false);
@@ -233,11 +270,13 @@ export function usePresence() {
   // Derive the logical state based on presence + reason semantics
   // RULE: 'ended' ONLY via explicit endPresence() call with human-initiated reason
   // RULE: Technical failures, background, lifecycle = always 'suspended'
+  // RULE: No presence from start (fresh state) = 'ended' to allow navigation
   const deriveLogicalState = useCallback((): PresenceLogicalState => {
     // Active presence = active state (most common path)
     if (currentPresence && currentPresence.ativo) return 'active';
     
-    // Explicitly marked as suspended = suspended
+    // Explicitly marked as suspended = suspended (transitional state)
+    // This is set during revalidation or background state
     if (isSuspended) return 'suspended';
     
     // Check if last reason was human-initiated AND marked as such
@@ -251,20 +290,22 @@ export function usePresence() {
       return 'suspended';
     }
     
-    // No presence and no reason = edge case
-    // Log for debugging but default to 'suspended' to avoid false 'ended'
+    // No presence and no reason = CLEAN STATE (never had presence or loading completed with nothing)
+    // This is NOT a suspended state - it's the normal "no presence" state
+    // Return 'ended' to allow navigation to location selector
     if (!currentPresence && !lastEndReason) {
-      console.warn('[usePresence] ⚠️ Unexpected state: no presence and no reason. Defaulting to suspended.');
-      return 'suspended';
+      // This is the expected state after initial load finds no presence
+      // It's NOT an error or edge case - it's normal behavior for new users
+      return 'ended';
     }
     
-    // Fallback: any unhandled case = suspended (never default to 'ended')
+    // Fallback: any unhandled case = ended (allows navigation)
     console.error('[usePresence] 🚨 Impossible state reached in deriveLogicalState:', {
       hasPresence: !!currentPresence,
       isSuspended,
       lastEndReason,
     });
-    return 'suspended';
+    return 'ended';
   }, [currentPresence, isSuspended, lastEndReason]);
 
   // Computed presence state object
@@ -311,9 +352,6 @@ export function usePresence() {
       outsideRadiusCountRef.current = 0;
     }
   }, [currentPresence]);
-  
-  // Ref to avoid stale closure in GPS callback
-  const endPresenceRef = useRef<((reason: 'manual' | 'expired' | 'gps_exit') => Promise<void>) | null>(null);
 
   const startGPSMonitoring = useCallback(() => {
     if (!navigator.geolocation || gpsWatchIdRef.current !== null) return;
@@ -399,10 +437,14 @@ export function usePresence() {
     });
   }, [user, currentPresence, currentPlace, stopGPSMonitoring]);
   
-  // Keep ref updated for GPS callback
+  // Keep refs updated for callbacks that use these functions
   useEffect(() => {
     endPresenceRef.current = endPresence;
   }, [endPresence]);
+
+  useEffect(() => {
+    startGPSMonitoringRef.current = startGPSMonitoring;
+  }, [startGPSMonitoring]);
 
   // Activate presence using centralized RPC (atomic, with concurrency lock)
   // The RPC handles: cleanup of previous presence, wave expiration, and new presence creation
