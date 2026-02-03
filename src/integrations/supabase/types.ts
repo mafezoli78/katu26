@@ -268,12 +268,14 @@ export type Database = {
         Row: {
           assunto_atual: string | null
           ativo: boolean
+          confirmed_at: string | null
           disponivel: boolean
           disponivel_desde: string | null
           disponivel_expira_em: string | null
           id: string
           inicio: string
           intention_id: string
+          is_confirmed: boolean
           location_id: string | null
           place_id: string | null
           ultima_atividade: string
@@ -282,12 +284,14 @@ export type Database = {
         Insert: {
           assunto_atual?: string | null
           ativo?: boolean
+          confirmed_at?: string | null
           disponivel?: boolean
           disponivel_desde?: string | null
           disponivel_expira_em?: string | null
           id?: string
           inicio?: string
           intention_id: string
+          is_confirmed?: boolean
           location_id?: string | null
           place_id?: string | null
           ultima_atividade?: string
@@ -296,12 +300,14 @@ export type Database = {
         Update: {
           assunto_atual?: string | null
           ativo?: boolean
+          confirmed_at?: string | null
           disponivel?: boolean
           disponivel_desde?: string | null
           disponivel_expira_em?: string | null
           id?: string
           inicio?: string
           intention_id?: string
+          is_confirmed?: boolean
           location_id?: string | null
           place_id?: string | null
           ultima_atividade?: string
@@ -557,6 +563,14 @@ export type Database = {
         }
         Returns: string
       }
+      can_auto_end_presence: {
+        Args: { p_place_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      confirm_presence: {
+        Args: { p_place_id: string; p_user_id: string }
+        Returns: boolean
+      }
       end_presence_cascade:
         | {
             Args: { p_place_id: string; p_user_id: string }
@@ -564,6 +578,15 @@ export type Database = {
           }
         | {
             Args: { p_motivo?: string; p_place_id: string; p_user_id: string }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_force?: boolean
+              p_motivo?: string
+              p_place_id: string
+              p_user_id: string
+            }
             Returns: undefined
           }
       find_nearby_temporary_places: {

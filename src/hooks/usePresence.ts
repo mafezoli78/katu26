@@ -80,12 +80,9 @@ export function usePresence() {
   const outsideRadiusCountRef = useRef(0);
   const presenceLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   
-  // CRITICAL: Track if baseline position was established
-  // GPS exit should only trigger AFTER user was confirmed inside at least once
+  // CRITICAL: Track if presence was confirmed on backend (user detected inside radius)
+  // GPS exit can ONLY be processed by backend if presence is confirmed
   const baselineEstablishedRef = useRef(false);
-  // Grace period: ignore first N readings to allow user to arrive at location
-  const initialReadingsCountRef = useRef(0);
-  const GPS_GRACE_READINGS = 3; // Ignore first 3 readings (gives ~90 seconds for user to arrive)
 
   const fetchIntentions = async () => {
     const { data, error } = await supabase
@@ -153,7 +150,8 @@ export function usePresence() {
   };
 
   // Refs for functions used inside fetchCurrentPresence to avoid circular deps
-  const endPresenceRef = useRef<((reason: 'manual' | 'expired' | 'gps_exit') => Promise<void>) | null>(null);
+  // CRITICAL: endPresence only accepts 'manual' | 'expired' (human-initiated)
+  const endPresenceRef = useRef<((reason: 'manual' | 'expired') => Promise<void>) | null>(null);
   const startGPSMonitoringRef = useRef<(() => void) | null>(null);
 
   const fetchCurrentPresence = useCallback(async (isRevalidation = false) => {
@@ -329,6 +327,97 @@ export function usePresence() {
   };
 
   // ============= GPS Monitoring =============
+  // GPS NEVER ends presence directly - it only:
+  // 1. Confirms presence when user is inside radius
+  // 2. Reports exit events to backend (backend decides if it can end)
+  
+  // stopGPSMonitoring must be declared first (used by other callbacks)
+  const stopGPSMonitoring = useCallback(() => {
+    if (gpsWatchIdRef.current !== null) {
+      console.log('[GPS] 🛑 Stopping position monitoring');
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+      outsideRadiusCountRef.current = 0;
+      baselineEstablishedRef.current = false;
+    }
+  }, []);
+  
+  // Confirm presence on backend when user is detected inside radius
+  const confirmPresenceOnBackend = useCallback(async () => {
+    if (!user || !currentPlace) return false;
+    
+    try {
+      const { data, error } = await supabase.rpc('confirm_presence', {
+        p_user_id: user.id,
+        p_place_id: currentPlace.id
+      });
+      
+      if (error) {
+        console.error('[GPS] Error confirming presence:', error);
+        return false;
+      }
+      
+      if (data) {
+        console.log('[GPS] ✅ Presence confirmed on backend');
+      }
+      return !!data;
+    } catch (err) {
+      console.error('[GPS] Error calling confirm_presence:', err);
+      return false;
+    }
+  }, [user, currentPlace]);
+  
+  // Report GPS exit to backend - backend decides if presence can be ended
+  const reportGPSExitToBackend = useCallback(async () => {
+    if (!user || !currentPlace) return;
+    
+    console.log('[GPS] 📤 Reporting GPS exit to backend...');
+    
+    try {
+      // Call end_presence_cascade with gps_exit reason
+      // Backend will BLOCK this if presence is not confirmed (is_confirmed = false)
+      const { error } = await supabase.rpc('end_presence_cascade', {
+        p_user_id: user.id,
+        p_place_id: currentPlace.id,
+        p_motivo: 'gps_exit',
+        p_force: false // NEVER force - let backend decide
+      });
+      
+      if (error) {
+        console.error('[GPS] Backend rejected GPS exit:', error);
+        // Backend blocked the exit - presence continues
+        // DO NOT update local state - user stays in place
+        return;
+      }
+      
+      // Backend accepted the exit - presence was confirmed and user left the radius
+      // This is a DEFINITIVE end (backend approved)
+      console.log('[GPS] ✅ Backend accepted GPS exit - presence ended definitively');
+      
+      // Stop GPS monitoring
+      stopGPSMonitoring();
+      
+      // Update local state
+      setCurrentPresence(null);
+      setCurrentPlace(null);
+      setRemainingTime(0);
+      presenceLocationRef.current = null;
+      setIsSuspended(false);
+      
+      // CRITICAL: If backend accepted, this IS a definitive end
+      // Mark as human-initiated so deriveLogicalState returns 'ended'
+      // This allows the Home guard to redirect to /location
+      setLastEndReason({ 
+        type: 'gps_exit', 
+        message: END_REASON_MESSAGES.gps_exit,
+        timestamp: new Date().toISOString(),
+        isHumanInitiated: true, // Backend approved = definitive end
+      });
+    } catch (err) {
+      console.error('[GPS] Error reporting GPS exit:', err);
+      // On error, keep user in place (fail safe)
+    }
+  }, [user, currentPlace, stopGPSMonitoring]);
   
   const checkGPSPosition = useCallback((position: GeolocationPosition) => {
     if (!presenceLocationRef.current || !currentPresence) return;
@@ -345,43 +434,36 @@ export function usePresence() {
     const distance = calculateDistanceMeters(latitude, longitude, locLat, locLng);
     const isInside = distance <= PRESENCE_RADIUS_METERS;
     
-    // CRITICAL: Grace period for initial readings
-    // This allows users to select a place they're walking towards
-    if (!baselineEstablishedRef.current) {
-      initialReadingsCountRef.current++;
-      console.log(`[GPS] 📍 Grace period reading ${initialReadingsCountRef.current}/${GPS_GRACE_READINGS} - ${Math.round(distance)}m from place`);
-      
-      // During grace period, only establish baseline if user is inside
-      if (isInside) {
-        baselineEstablishedRef.current = true;
-        console.log('[GPS] ✅ Baseline established - user confirmed inside radius');
-      } else if (initialReadingsCountRef.current >= GPS_GRACE_READINGS) {
-        // After grace period, establish baseline anyway (user chose to be at this place)
-        baselineEstablishedRef.current = true;
-        console.log('[GPS] ⚠️ Grace period ended - baseline established (user may be approaching)');
-      }
-      return; // Don't trigger exit during grace period
-    }
-
     console.log(`[GPS] Distance from place: ${Math.round(distance)}m (radius: ${PRESENCE_RADIUS_METERS}m) - ${isInside ? '✅ Inside' : '⚠️ Outside'}`);
-
-    if (!isInside) {
-      outsideRadiusCountRef.current++;
-      console.log(`[GPS] Outside radius (${outsideRadiusCountRef.current}/${GPS_EXIT_THRESHOLD_COUNT})`);
-
-      if (outsideRadiusCountRef.current >= GPS_EXIT_THRESHOLD_COUNT) {
-        console.log('[GPS] 🚪 Exit confirmed - ending presence');
-        // Use ref to avoid stale closure
-        endPresenceRef.current?.('gps_exit');
-      }
-    } else {
-      // Reset counter when back inside
+    
+    // CRITICAL: If user is inside radius, confirm presence on backend
+    // This transitions presence from provisional to confirmed
+    if (isInside) {
+      // Reset exit counter
       if (outsideRadiusCountRef.current > 0) {
         console.log('[GPS] ✅ Back inside radius');
       }
       outsideRadiusCountRef.current = 0;
+      
+      // Confirm presence if not yet done
+      if (!baselineEstablishedRef.current) {
+        baselineEstablishedRef.current = true;
+        confirmPresenceOnBackend();
+      }
+      return;
     }
-  }, [currentPresence]);
+
+    // User is outside radius
+    outsideRadiusCountRef.current++;
+    console.log(`[GPS] Outside radius (${outsideRadiusCountRef.current}/${GPS_EXIT_THRESHOLD_COUNT})`);
+
+    if (outsideRadiusCountRef.current >= GPS_EXIT_THRESHOLD_COUNT) {
+      console.log('[GPS] 🚪 Exit threshold reached - reporting to backend');
+      // CRITICAL: Don't end presence directly - report to backend
+      // Backend will decide if presence can be ended (only if confirmed)
+      reportGPSExitToBackend();
+    }
+  }, [currentPresence, confirmPresenceOnBackend, reportGPSExitToBackend]);
 
   const startGPSMonitoring = useCallback(() => {
     if (!navigator.geolocation || gpsWatchIdRef.current !== null) return;
@@ -390,7 +472,6 @@ export function usePresence() {
     // Reset all counters for fresh monitoring session
     outsideRadiusCountRef.current = 0;
     baselineEstablishedRef.current = false;
-    initialReadingsCountRef.current = 0;
 
     gpsWatchIdRef.current = navigator.geolocation.watchPosition(
       checkGPSPosition,
@@ -405,20 +486,11 @@ export function usePresence() {
     );
   }, [checkGPSPosition]);
 
-  const stopGPSMonitoring = useCallback(() => {
-    if (gpsWatchIdRef.current !== null) {
-      console.log('[GPS] 🛑 Stopping position monitoring');
-      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      gpsWatchIdRef.current = null;
-      outsideRadiusCountRef.current = 0;
-      baselineEstablishedRef.current = false;
-      initialReadingsCountRef.current = 0;
-    }
-  }, []);
-
   // ============= Presence Actions =============
-
-  const endPresence = useCallback(async (reason: 'manual' | 'expired' | 'gps_exit') => {
+  // CRITICAL: endPresence is ONLY for human-initiated actions (manual, expired)
+  // GPS exit is handled separately by reportGPSExitToBackend (backend decides)
+  
+  const endPresence = useCallback(async (reason: 'manual' | 'expired') => {
     if (!user) return;
 
     const semanticReason = mapToSemanticReason(reason);
@@ -433,13 +505,14 @@ export function usePresence() {
     const placeId = currentPresence?.place_id || currentPlace?.id;
 
     // Call the cascade cleanup function if we have a place_id
-    // Pass the reason (p_motivo) to preserve distinction in conversations
+    // Pass p_force=true for human actions - they always succeed
     if (placeId) {
       try {
         const { error } = await supabase.rpc('end_presence_cascade', {
           p_user_id: user.id,
           p_place_id: placeId,
-          p_motivo: reason
+          p_motivo: reason,
+          p_force: true // Human actions are always allowed
         });
         
         if (error) {

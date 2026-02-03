@@ -19,22 +19,24 @@ export type PresenceLogicalState = 'active' | 'suspended' | 'ended';
 /**
  * Razões de encerramento DEFINITIVO (ação humana).
  * Apenas estas razões devem transicionar para 'ended'.
+ * CRITICAL: gps_exit NÃO é human-initiated - é automático (backend decide).
  */
 export type HumanEndReasonType = 
   | 'manual'              // Usuário saiu explicitamente
   | 'expired'             // Timeout de presença atingido
-  | 'gps_exit'            // Usuário saiu do raio GPS
   | 'presence_expired'    // Alias semântico para expiração
   | 'user_left_location'; // Alias semântico para saída manual
 
 /**
- * Razões de SUSPENSÃO (técnicas/sistêmicas).
- * Não devem transicionar para 'ended' diretamente.
+ * Razões de SUSPENSÃO/AUTOMÁTICAS (técnicas/sistêmicas).
+ * Não devem transicionar para 'ended' diretamente no frontend.
+ * Backend é a autoridade para decidir se pode encerrar.
  */
 export type TechnicalSuspendReasonType =
-  | 'presence_lost_background'  // Presença perdida durante background
-  | 'revalidation_pending'      // Aguardando confirmação do backend
-  | 'lifecycle_interrupted';    // Interrupção de ciclo de vida
+  | 'gps_exit'                    // GPS detectou saída do raio (backend decide se encerra)
+  | 'presence_lost_background'    // Presença perdida durante background
+  | 'revalidation_pending'        // Aguardando confirmação do backend
+  | 'lifecycle_interrupted';      // Interrupção de ciclo de vida
 
 /**
  * União de todos os tipos de razão para compatibilidade.
@@ -43,12 +45,12 @@ export type PresenceEndReasonType = HumanEndReasonType | TechnicalSuspendReasonT
 
 /**
  * Verifica se uma razão representa encerramento humano definitivo.
+ * CRITICAL: gps_exit NÃO é human-initiated - é automático.
  */
 export function isHumanEndReason(reason: PresenceEndReasonType): boolean {
   const humanReasons: PresenceEndReasonType[] = [
     'manual',
     'expired',
-    'gps_exit',
     'presence_expired',
     'user_left_location',
   ];
@@ -85,12 +87,12 @@ export interface PresenceState {
 
 /**
  * Mapeia razões internas para razões semânticas de domínio.
+ * CRITICAL: gps_exit não é mapeado aqui pois não é human-initiated.
  */
-export function mapToSemanticReason(internalReason: 'manual' | 'expired' | 'gps_exit'): HumanEndReasonType {
-  const mapping: Record<'manual' | 'expired' | 'gps_exit', HumanEndReasonType> = {
+export function mapToSemanticReason(internalReason: 'manual' | 'expired'): HumanEndReasonType {
+  const mapping: Record<'manual' | 'expired', HumanEndReasonType> = {
     manual: 'user_left_location',
     expired: 'presence_expired',
-    gps_exit: 'gps_exit',
   };
   return mapping[internalReason];
 }
