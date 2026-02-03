@@ -70,6 +70,10 @@ export function usePresence() {
   const [isRevalidating, setIsRevalidating] = useState(false);
   const [lastValidatedAt, setLastValidatedAt] = useState<string | null>(null);
   const [isSuspended, setIsSuspended] = useState(false);
+  
+  // CRITICAL: State to block redirects during place entry transition
+  // This protects the gap between user action and backend confirmation
+  const [isEnteringPlace, setIsEnteringPlace] = useState(false);
 
   // Refs for GPS monitoring
   const gpsWatchIdRef = useRef<number | null>(null);
@@ -314,6 +318,7 @@ export function usePresence() {
     endReason: lastEndReason,
     isRevalidating,
     lastValidatedAt,
+    isEnteringPlace, // Expose for navigation guards
   };
 
   // ============= GPS Monitoring =============
@@ -457,32 +462,44 @@ export function usePresence() {
 
     console.log(`[Presence] 🔄 Activating presence at place: ${placeId}`);
 
+    // CRITICAL: Mark as entering place BEFORE any async operation
+    // This prevents the Home guard from redirecting during the transition
+    setIsEnteringPlace(true);
+
     // Clear last end reason
     setLastEndReason(null);
 
     // Stop GPS monitoring from previous presence
     stopGPSMonitoring();
 
-    // Call centralized RPC - handles all cleanup atomically with advisory lock
-    const { data: newPresenceId, error } = await supabase.rpc('activate_presence', {
-      p_user_id: user.id,
-      p_place_id: placeId,
-      p_intention_id: intentionId,
-      p_assunto_atual: assuntoAtual?.trim() || null
-    });
+    try {
+      // Call centralized RPC - handles all cleanup atomically with advisory lock
+      const { data: newPresenceId, error } = await supabase.rpc('activate_presence', {
+        p_user_id: user.id,
+        p_place_id: placeId,
+        p_intention_id: intentionId,
+        p_assunto_atual: assuntoAtual?.trim() || null
+      });
 
-    if (error) {
-      console.error('[Presence] ❌ Error in activate_presence RPC:', error);
-      return { error };
+      if (error) {
+        console.error('[Presence] ❌ Error in activate_presence RPC:', error);
+        setIsEnteringPlace(false);
+        return { error };
+      }
+
+      console.log(`[Presence] ✅ Presence activated: ${newPresenceId}`);
+      setRemainingTime(PRESENCE_DURATION_MS);
+
+      // Fetch the newly created presence and place details
+      await fetchCurrentPresence();
+
+      return { error: null };
+    } finally {
+      // CRITICAL: Only clear isEnteringPlace AFTER fetchCurrentPresence completes
+      // This ensures the Home guard sees the new presence before unblocking
+      setIsEnteringPlace(false);
+      console.log('[Presence] ✅ Entry transition completed');
     }
-
-    console.log(`[Presence] ✅ Presence activated: ${newPresenceId}`);
-    setRemainingTime(PRESENCE_DURATION_MS);
-
-    // Fetch the newly created presence and place details
-    await fetchCurrentPresence();
-
-    return { error: null };
   };
 
   // Create a temporary place and activate presence
@@ -677,5 +694,8 @@ export function usePresence() {
     deactivatePresence,
     refetch: fetchCurrentPresence,
     clearLastEndReason: () => setLastEndReason(null),
+    
+    // Transition states (for guards)
+    isEnteringPlace,
   };
 }

@@ -79,6 +79,8 @@ export interface PresenceState {
   isRevalidating: boolean;
   /** Timestamp da última revalidação bem-sucedida */
   lastValidatedAt: string | null;
+  /** CRITICAL: Indica se o usuário está entrando em um local (transição em andamento) */
+  isEnteringPlace?: boolean;
 }
 
 /**
