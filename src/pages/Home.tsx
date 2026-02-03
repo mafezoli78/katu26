@@ -25,7 +25,8 @@ export default function Home() {
     deactivatePresence,
     lastEndReason,
     clearLastEndReason,
-    loading: presenceLoading 
+    loading: presenceLoading,
+    presenceState,
   } = usePresence();
   const { people, loading: peopleLoading, refetch: refetchPeople } = usePeopleNearby(currentPlace?.id || null);
   const { sendWave, refetch: refetchWaves } = useWaves();
@@ -69,14 +70,38 @@ export default function Home() {
   };
 
   // Auto-redirect to location page if no active presence
-  // IMPORTANT: Only redirect AFTER loading is complete to prevent premature redirects
-  // when returning from background (presence state needs time to refetch from backend)
+  // CRITICAL: Use logical state model to prevent false redirects during revalidation
+  // Rules:
+  // 1. Wait for initial load to complete
+  // 2. NEVER redirect while revalidating (background/foreground, network delays)
+  // 3. Only redirect if logical state is 'ended' (human-initiated termination)
+  // 4. 'suspended' state = keep user in place, may recover
   useEffect(() => {
-    if (presenceLoading) return; // Wait for backend fetch
-    if (!currentPresence || !currentPlace) {
+    // Wait for initial backend fetch
+    if (presenceLoading) return;
+    
+    // CRITICAL: Never redirect during revalidation (prevents race condition)
+    if (presenceState.isRevalidating) {
+      console.log('[Home] ⏳ Revalidating - blocking redirect');
+      return;
+    }
+    
+    // Only redirect if presence definitively ended (human-initiated)
+    // 'ended' = user explicitly left, GPS exit, or time expired
+    // 'suspended' = technical issue, may recover - keep user in place
+    if (presenceState.logicalState === 'ended') {
+      console.log('[Home] 🚪 Presence ended - redirecting to location');
+      navigate('/location', { replace: true });
+      return;
+    }
+    
+    // Also redirect if there's genuinely no presence AND we're not in a transitional state
+    // This handles the case of a fresh page load with no presence
+    if (!currentPresence && !currentPlace && presenceState.logicalState !== 'suspended') {
+      console.log('[Home] ℹ️ No presence found - redirecting to location');
       navigate('/location', { replace: true });
     }
-  }, [presenceLoading, currentPresence, currentPlace, navigate]);
+  }, [presenceLoading, presenceState, currentPresence, currentPlace, navigate]);
 
   if (presenceLoading) {
     return (

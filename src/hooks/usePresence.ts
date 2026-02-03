@@ -150,6 +150,10 @@ export function usePresence() {
 
     if (isRevalidation) {
       setIsRevalidating(true);
+      // CRITICAL: During revalidation, mark as suspended BEFORE the async call
+      // This prevents the navigation guard from redirecting while we wait for the response
+      setIsSuspended(true);
+      console.log('[usePresence] 🔄 Revalidation started - marked as suspended');
     }
 
     try {
@@ -171,7 +175,7 @@ export function usePresence() {
           setCurrentPresence(data);
           setRemainingTime(PRESENCE_DURATION_MS - (now - lastActivity));
           setLastValidatedAt(new Date().toISOString());
-          setIsSuspended(false);
+          setIsSuspended(false); // Validated successfully - clear suspended state
 
           // Fetch the place details using place_id (source of truth)
           const placeId = data.place_id;
@@ -192,34 +196,39 @@ export function usePresence() {
               startGPSMonitoring();
             }
           }
+          console.log('[usePresence] ✅ Presence validated successfully');
           return { valid: true };
         }
       } else {
         // No valid presence in backend
-        const wasActive = currentPresence !== null;
-        setCurrentPresence(null);
-        setCurrentPlace(null);
-        
-        // If we had presence and now it's gone during revalidation,
-        // mark as SUSPENDED (technical), not ended
-        // This allows potential recovery or proper human-initiated end
-        if (wasActive && isRevalidation) {
-          setIsSuspended(true); // Mark as suspended, not ended
+        // CRITICAL: During revalidation, DO NOT zero the state immediately
+        // Keep the current state and mark as suspended for potential recovery
+        if (isRevalidation) {
+          console.log('[usePresence] ⚠️ Revalidation found no presence - keeping stale state as suspended');
+          // Keep currentPresence and currentPlace as-is (stale but usable)
+          // Already marked as suspended at the start of revalidation
           setLastEndReason({
             type: 'presence_lost_background',
             message: END_REASON_MESSAGES.presence_lost_background,
             timestamp: new Date().toISOString(),
             isHumanInitiated: false, // Technical reason, not human action
           });
+          // DO NOT set currentPresence to null here during revalidation
+          return { valid: false };
+        } else {
+          // Initial fetch (not revalidation) - safe to set null
+          console.log('[usePresence] ℹ️ Initial fetch found no presence');
+          setCurrentPresence(null);
+          setCurrentPlace(null);
+          return { valid: false };
         }
-        return { valid: false };
       }
     } finally {
       if (isRevalidation) {
         setIsRevalidating(false);
       }
     }
-  }, [user, currentPresence]);
+  }, [user]);
 
   // Derive the logical state based on presence + reason semantics
   // RULE: 'ended' ONLY via explicit endPresence() call with human-initiated reason
