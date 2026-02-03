@@ -80,6 +80,13 @@ export default function Home() {
     // Wait for initial backend fetch
     if (presenceLoading) return;
     
+    // CRITICAL: Never redirect while entering a place (transition in progress)
+    // This is the primary guard against premature redirects after place selection
+    if (presenceState.isEnteringPlace) {
+      console.log('[Home] 🚧 Entering place - blocking redirect');
+      return;
+    }
+    
     // CRITICAL: Never redirect during revalidation (prevents race condition)
     if (presenceState.isRevalidating) {
       console.log('[Home] ⏳ Revalidating - blocking redirect');
