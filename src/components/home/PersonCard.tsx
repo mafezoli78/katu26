@@ -71,8 +71,8 @@ export function PersonCard({
     blocks,
   });
 
-  // Debug temporário
-  console.log('[InteractionState]', person.id, stateName);
+  // Card visibility: controlled EXCLUSIVELY by useInteractionState
+  // Only BLOCKED state returns isVisible=false - all other states keep card visible
 
   // Se não deve ser visível (BLOCKED), não renderiza
   if (!isVisible) {
