@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -10,6 +10,10 @@ import { useAuth } from '@/contexts/AuthContext';
  * - Conversas (ativas e em cooldown)
  * - Silenciamentos ativos
  * - Bloqueios
+ * 
+ * IMPORTANTE: Este hook mantém subscriptions realtime para conversations
+ * garantindo que o estado do card/botão reflita imediatamente mudanças
+ * (ex: chat iniciado, chat encerrado) sem flickering.
  */
 
 export interface NormalizedWave {
@@ -56,6 +60,7 @@ interface UseInteractionDataResult {
 
 /**
  * Busca todos os dados de interação para um local específico.
+ * Mantém subscription realtime para conversations evitando flickering.
  * 
  * @param placeId - ID do local atual (obrigatório para normalização)
  */
@@ -67,6 +72,9 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
   const [activeMutes, setActiveMutes] = useState<NormalizedMute[]>([]);
   const [blocks, setBlocks] = useState<NormalizedBlock[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Ref para evitar race conditions durante refetch
+  const fetchIdRef = useRef(0);
 
   const fetchData = useCallback(async () => {
     if (!user || !placeId) {
@@ -78,6 +86,9 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
       setLoading(false);
       return;
     }
+
+    // Incrementar ID para detectar chamadas obsoletas
+    const currentFetchId = ++fetchIdRef.current;
 
     try {
       const now = new Date().toISOString();
@@ -127,6 +138,11 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
           .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`)
       ]);
 
+      // Se esta chamada ficou obsoleta (outra mais recente foi feita), ignorar
+      if (currentFetchId !== fetchIdRef.current) {
+        return;
+      }
+
       // Normalizar waves (usar place_id, fallback para location_id)
       const normalizeWave = (wave: any): NormalizedWave => ({
         id: wave.id,
@@ -160,13 +176,98 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
     } catch (error) {
       console.error('[useInteractionData] Error fetching data:', error);
     } finally {
-      setLoading(false);
+      // Só marcar loading=false se esta é a chamada mais recente
+      if (currentFetchId === fetchIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [user, placeId]);
 
+  // Fetch inicial
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Realtime subscription para conversations
+  // Garante que mudanças (chat iniciado, chat encerrado) reflitam imediatamente
+  useEffect(() => {
+    if (!user || !placeId) return;
+
+    const channel = supabase
+      .channel(`interaction-conversations-${placeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `place_id=eq.${placeId}`,
+        },
+        (payload) => {
+          const record = payload.new as any;
+          const oldRecord = payload.old as any;
+          
+          // Verificar se a mudança envolve o usuário atual
+          const involvesUser = 
+            record?.user1_id === user.id || 
+            record?.user2_id === user.id ||
+            oldRecord?.user1_id === user.id ||
+            oldRecord?.user2_id === user.id;
+          
+          if (involvesUser) {
+            // Refetch para garantir consistência
+            fetchData();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, placeId, fetchData]);
+
+  // Realtime subscription para waves
+  // Garante que acenos enviados/recebidos reflitam imediatamente
+  useEffect(() => {
+    if (!user || !placeId) return;
+
+    const channel = supabase
+      .channel(`interaction-waves-${placeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'waves',
+        },
+        (payload) => {
+          const record = payload.new as any;
+          const oldRecord = payload.old as any;
+          
+          // Verificar se a mudança envolve o usuário atual
+          const involvesUser = 
+            record?.de_user_id === user.id || 
+            record?.para_user_id === user.id ||
+            oldRecord?.de_user_id === user.id ||
+            oldRecord?.para_user_id === user.id;
+          
+          // Verificar se é no local atual
+          const isCurrentPlace = 
+            record?.place_id === placeId ||
+            oldRecord?.place_id === placeId;
+          
+          if (involvesUser && isCurrentPlace) {
+            fetchData();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, placeId, fetchData]);
 
   return {
     sentWaves,
