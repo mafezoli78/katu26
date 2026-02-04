@@ -11,9 +11,11 @@ import { useAuth } from '@/contexts/AuthContext';
  * - Silenciamentos ativos
  * - Bloqueios
  * 
- * IMPORTANTE: Este hook mantém subscriptions realtime para conversations
- * garantindo que o estado do card/botão reflita imediatamente mudanças
- * (ex: chat iniciado, chat encerrado) sem flickering.
+ * GARANTIAS DE ESTABILIDADE:
+ * 1. Dados NUNCA são limpos durante refetch - mantém estado anterior até novo chegar
+ * 2. Race conditions são tratadas via fetchIdRef
+ * 3. Subscriptions realtime garantem atualizações imediatas
+ * 4. O estado do botão permanece consistente durante todo o ciclo de vida
  */
 
 export interface NormalizedWave {
@@ -62,6 +64,10 @@ interface UseInteractionDataResult {
  * Busca todos os dados de interação para um local específico.
  * Mantém subscription realtime para conversations evitando flickering.
  * 
+ * IMPORTANTE: Este hook NUNCA limpa os dados durante refetch.
+ * Dados anteriores são mantidos até que novos dados cheguem.
+ * Isso garante que o botão do card nunca volte para "Acenar" durante um chat ativo.
+ * 
  * @param placeId - ID do local atual (obrigatório para normalização)
  */
 export function useInteractionData(placeId: string | null): UseInteractionDataResult {
@@ -73,11 +79,28 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
   const [blocks, setBlocks] = useState<NormalizedBlock[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Ref para evitar race conditions durante refetch
+  // Refs para evitar race conditions e re-criação de callbacks
   const fetchIdRef = useRef(0);
+  const userIdRef = useRef<string | undefined>(undefined);
+  const placeIdRef = useRef<string | null>(null);
+  
+  // Atualizar refs quando valores mudam
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
+  
+  useEffect(() => {
+    placeIdRef.current = placeId;
+  }, [placeId]);
 
+  // Função de fetch estável (não recria em cada render)
   const fetchData = useCallback(async () => {
-    if (!user || !placeId) {
+    const currentUserId = userIdRef.current;
+    const currentPlaceId = placeIdRef.current;
+    
+    if (!currentUserId || !currentPlaceId) {
+      // IMPORTANTE: Só limpar dados se realmente não há user/place
+      // Isso acontece apenas na saída do local, não durante refetch
       setSentWaves([]);
       setReceivedWaves([]);
       setConversations([]);
@@ -105,7 +128,7 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
         supabase
           .from('waves')
           .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at')
-          .eq('de_user_id', user.id)
+          .eq('de_user_id', currentUserId)
           .eq('status', 'pending')
           .or(`expires_at.is.null,expires_at.gt.${now}`),
         
@@ -113,7 +136,7 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
         supabase
           .from('waves')
           .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at')
-          .eq('para_user_id', user.id)
+          .eq('para_user_id', currentUserId)
           .eq('status', 'pending')
           .or(`expires_at.is.null,expires_at.gt.${now}`),
         
@@ -121,21 +144,21 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
         supabase
           .from('conversations')
           .select('id, user1_id, user2_id, place_id, ativo, encerrado_por, reinteracao_permitida_em')
-          .eq('place_id', placeId)
-          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`),
+          .eq('place_id', currentPlaceId)
+          .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`),
         
         // 4. Silenciamentos ativos (não expirados)
         supabase
           .from('user_mutes')
           .select('id, user_id, muted_user_id, expira_em')
-          .eq('user_id', user.id)
+          .eq('user_id', currentUserId)
           .gt('expira_em', now),
         
         // 5. Bloqueios (como autor ou alvo)
         supabase
           .from('user_blocks')
           .select('id, user_id, blocked_user_id')
-          .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`)
+          .or(`user_id.eq.${currentUserId},blocked_user_id.eq.${currentUserId}`)
       ]);
 
       // Se esta chamada ficou obsoleta (outra mais recente foi feita), ignorar
@@ -153,6 +176,8 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
         expires_at: wave.expires_at,
       });
 
+      // IMPORTANTE: Só atualizar se temos dados válidos (sem erro)
+      // Isso garante que dados anteriores são mantidos em caso de erro de rede
       if (!sentResult.error && sentResult.data) {
         setSentWaves(sentResult.data.map(normalizeWave).filter(w => w.place_id));
       }
@@ -175,26 +200,38 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
 
     } catch (error) {
       console.error('[useInteractionData] Error fetching data:', error);
+      // Em caso de erro, NÃO limpar dados existentes
+      // Mantém o último estado válido
     } finally {
       // Só marcar loading=false se esta é a chamada mais recente
       if (currentFetchId === fetchIdRef.current) {
         setLoading(false);
       }
     }
-  }, [user, placeId]);
+  }, []); // Dependências vazias - usa refs para valores atuais
 
-  // Fetch inicial
+  // Fetch inicial e quando placeId/user mudam
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (user?.id && placeId) {
+      fetchData();
+    } else if (!user?.id || !placeId) {
+      // Limpar dados apenas quando realmente não há contexto
+      setSentWaves([]);
+      setReceivedWaves([]);
+      setConversations([]);
+      setActiveMutes([]);
+      setBlocks([]);
+      setLoading(false);
+    }
+  }, [user?.id, placeId, fetchData]);
 
   // Realtime subscription para conversations
   // Garante que mudanças (chat iniciado, chat encerrado) reflitam imediatamente
   useEffect(() => {
-    if (!user || !placeId) return;
+    if (!user?.id || !placeId) return;
 
     const channel = supabase
-      .channel(`interaction-conversations-${placeId}`)
+      .channel(`interaction-conversations-${placeId}-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -225,15 +262,15 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, placeId, fetchData]);
+  }, [user?.id, placeId, fetchData]);
 
   // Realtime subscription para waves
   // Garante que acenos enviados/recebidos reflitam imediatamente
   useEffect(() => {
-    if (!user || !placeId) return;
+    if (!user?.id || !placeId) return;
 
     const channel = supabase
-      .channel(`interaction-waves-${placeId}`)
+      .channel(`interaction-waves-${placeId}-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -267,7 +304,7 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, placeId, fetchData]);
+  }, [user?.id, placeId, fetchData]);
 
   return {
     sentWaves,
