@@ -15,66 +15,27 @@ export interface PersonNearby {
  * Fetch people with active presence at the same place.
  * Uses place_id as the source of truth.
  */
+/**
+ * Fetch people with active presence at the same place.
+ * Uses place_id as the source of truth.
+ * 
+ * IMPORTANT: This hook returns ALL users present at the location.
+ * It does NOT filter by interaction state (conversations, cooldowns, etc.)
+ * Visibility filtering is handled EXCLUSIVELY by PersonCard via useInteractionState.
+ */
 export function usePeopleNearby(placeId: string | null) {
   const { user } = useAuth();
   const [people, setPeople] = useState<PersonNearby[]>([]);
   const [loading, setLoading] = useState(true);
-  const [conversationUserIds, setConversationUserIds] = useState<Set<string>>(new Set());
 
   const fetchPeopleNearby = async () => {
     if (!user || !placeId) {
       setPeople([]);
-      setConversationUserIds(new Set());
       setLoading(false);
       return;
     }
 
     try {
-      // R1: Get active conversations at this place to exclude matched users
-      const { data: activeConversations } = await supabase
-        .from('conversations')
-        .select('user1_id, user2_id')
-        .eq('ativo', true)
-        .eq('place_id', placeId)
-        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
-
-      // R2: Get conversations in cooldown period (reinteracao_permitida_em > now)
-      // These users should also be hidden from the list
-      const { data: cooldownConversations } = await supabase
-        .from('conversations')
-        .select('user1_id, user2_id, reinteracao_permitida_em')
-        .eq('ativo', false)
-        .eq('place_id', placeId)
-        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-        .gt('reinteracao_permitida_em', new Date().toISOString());
-
-      // Build set of user IDs that have active conversations OR are in cooldown
-      const matchedUserIds = new Set<string>();
-      
-      // Add users with active conversations
-      if (activeConversations) {
-        activeConversations.forEach(conv => {
-          if (conv.user1_id === user.id) {
-            matchedUserIds.add(conv.user2_id);
-          } else {
-            matchedUserIds.add(conv.user1_id);
-          }
-        });
-      }
-      
-      // Add users in cooldown period
-      if (cooldownConversations) {
-        cooldownConversations.forEach(conv => {
-          if (conv.user1_id === user.id) {
-            matchedUserIds.add(conv.user2_id);
-          } else {
-            matchedUserIds.add(conv.user1_id);
-          }
-        });
-      }
-      
-      setConversationUserIds(matchedUserIds);
-
       // Get active presences at this place (excluding current user)
       // Query by place_id first, fall back to location_id for backwards compatibility
       const { data: presences, error: presenceError } = await supabase
@@ -99,16 +60,11 @@ export function usePeopleNearby(placeId: string | null) {
 
       const myTags = myInterests?.map(i => i.tag) || [];
 
-      // Fetch profiles, interests, and intentions for each person
+      // Fetch profiles and interests for each person
+      // NO FILTERING by conversation state - visibility is handled by PersonCard
       const peopleData: PersonNearby[] = [];
 
       for (const presence of presences) {
-        // R1: Skip users who have active conversations with current user
-        if (matchedUserIds.has(presence.user_id)) {
-          console.log(`[usePeopleNearby] Skipping user ${presence.user_id} - has active conversation`);
-          continue;
-        }
-
         // Check if presence is still valid (within 1 hour)
         const lastActivity = new Date(presence.ultima_atividade).getTime();
         const now = Date.now();
@@ -159,18 +115,9 @@ export function usePeopleNearby(placeId: string | null) {
     return () => clearInterval(interval);
   }, [user, placeId]);
 
-  /**
-   * R1: Check if user has an active conversation with another user at this place.
-   * Used to hide wave button for matched users.
-   */
-  const hasActiveConversationWith = (userId: string): boolean => {
-    return conversationUserIds.has(userId);
-  };
-
   return {
     people,
     loading,
     refetch: fetchPeopleNearby,
-    hasActiveConversationWith,
   };
 }
