@@ -60,7 +60,7 @@ export function ChatWindow({ conversation, onClose, onEndChat }: ChatWindowProps
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col">
+    <div className="flex flex-col h-[calc(100dvh-4rem)] bg-background">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b bg-card">
         <div className="flex items-center gap-3">
@@ -99,7 +99,7 @@ export function ChatWindow({ conversation, onClose, onEndChat }: ChatWindowProps
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+      <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -149,7 +149,7 @@ export function ChatWindow({ conversation, onClose, onEndChat }: ChatWindowProps
       </ScrollArea>
 
       {/* Input */}
-      <div className="p-4 border-t bg-card safe-area-inset-bottom">
+      <div className="flex-shrink-0 p-4 border-t bg-card">
         <div className="flex items-center gap-2">
           <Input
             value={inputValue}
@@ -158,7 +158,7 @@ export function ChatWindow({ conversation, onClose, onEndChat }: ChatWindowProps
             placeholder="Digite sua mensagem..."
             disabled={sending}
             className="flex-1"
-            autoFocus
+            
           />
           <Button
             size="icon"
