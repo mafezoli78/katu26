@@ -60,7 +60,7 @@ export function ChatWindow({ conversation, onClose, onEndChat }: ChatWindowProps
   };
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-4rem)] bg-background">
+    <div className="flex flex-col h-[calc(100dvh-5rem)] bg-background">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b bg-card">
         <div className="flex items-center gap-3">
