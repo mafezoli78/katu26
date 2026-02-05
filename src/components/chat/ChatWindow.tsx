@@ -64,9 +64,9 @@ export function ChatWindow({
       setTimeout(() => setShowEndConfirm(false), 3000);
     }
   };
-  return <div className="flex flex-col h-[calc(100dvh-5rem)] bg-background">
-      {/* Header - fixed to viewport, immune to keyboard */}
-      <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between p-4 border-b bg-card">
+  return <div className="fixed inset-0 z-20 bg-background flex flex-col">
+      {/* Header - fixed structure, never moves */}
+      <div className="flex-shrink-0 flex items-center justify-between p-4 border-b bg-card z-30">
         <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
             <AvatarImage src={conversation.otherUser.foto_url || undefined} />
@@ -94,9 +94,7 @@ export function ChatWindow({
         </div>
       </div>
 
-      {/* Spacer for fixed header */}
-      <div className="flex-shrink-0 h-[4.5rem]" />
-      {/* Messages */}
+      {/* Messages - fills remaining space */}
       <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
         {loading ? <div className="flex items-center justify-center h-32">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -125,7 +123,7 @@ export function ChatWindow({
           </div>}
       </ScrollArea>
 
-      {/* Input */}
+      {/* Input - anchored to bottom of this fixed container */}
       <div className="flex-shrink-0 p-4 border-t bg-card">
         <div className="flex items-center gap-2">
           <Input value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={handleKeyPress} placeholder="Digite sua mensagem..." disabled={sending} className="flex-1" />
@@ -133,7 +131,6 @@ export function ChatWindow({
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
-        
       </div>
     </div>;
 }
