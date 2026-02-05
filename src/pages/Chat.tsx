@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChat } from '@/hooks/useChat';
 import { usePresence } from '@/hooks/usePresence';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { MobileLayout } from '@/components/layout/MobileLayout';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ConversationsList } from '@/components/chat/ConversationsList';
@@ -14,6 +15,7 @@ export default function Chat() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isKeyboardVisible = useKeyboardVisible();
   const conversationIdParam = searchParams.get('conversationId');
   
   // Get presence state to pass to useChat
@@ -90,7 +92,7 @@ export default function Chat() {
   // Show chat within MobileLayout when active
   if (chatState.isActive && chatState.conversation) {
     return (
-      <MobileLayout showHeader={false}>
+      <MobileLayout showHeader={false} showNav={!isKeyboardVisible}>
         <ChatWindow
           conversation={chatState.conversation}
           onClose={closeChat}
