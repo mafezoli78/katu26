@@ -64,9 +64,9 @@ export function ChatWindow({
       setTimeout(() => setShowEndConfirm(false), 3000);
     }
   };
-  return <div className="fixed inset-0 z-20 bg-background flex flex-col">
-      {/* Header - fixed structure, never moves */}
-      <div className="flex-shrink-0 flex items-center justify-between p-4 border-b bg-card z-30">
+  return <div className="flex flex-col h-full overflow-hidden">
+      {/* Header - always visible at top */}
+      <div className="flex-shrink-0 flex items-center justify-between p-4 border-b bg-card">
         <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
             <AvatarImage src={conversation.otherUser.foto_url || undefined} />
@@ -94,7 +94,7 @@ export function ChatWindow({
         </div>
       </div>
 
-      {/* Messages - fills remaining space */}
+      {/* Messages - only this area scrolls */}
       <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
         {loading ? <div className="flex items-center justify-center h-32">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -123,7 +123,7 @@ export function ChatWindow({
           </div>}
       </ScrollArea>
 
-      {/* Input - anchored to bottom of this fixed container */}
+      {/* Input - fixed at bottom, above nav */}
       <div className="flex-shrink-0 p-4 border-t bg-card">
         <div className="flex items-center gap-2">
           <Input value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={handleKeyPress} placeholder="Digite sua mensagem..." disabled={sending} className="flex-1" />

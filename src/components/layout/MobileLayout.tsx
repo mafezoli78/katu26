@@ -12,7 +12,7 @@ export function MobileLayout({ children, showNav = true, showHeader = true }: Mo
   return (
     <div className="mobile-container bg-background min-h-screen flex flex-col">
       {showHeader && <AppHeader />}
-      <main className={`flex-1 ${showNav ? 'pb-20' : ''}`}>
+      <main className={`flex-1 overflow-hidden ${showNav ? 'pb-20' : ''}`}>
         {children}
       </main>
       {showNav && <BottomNav />}
