@@ -131,28 +131,37 @@ export function useWaves() {
     // Isso garante que decisões de UI e backend estejam sempre alinhadas.
     // =========================================================================
     
-    // 1. Verificar conversa ativa OU em cooldown neste local
-    const { data: existingConversation, error: convError } = await supabase
+    // 1. Verificar conversas neste local entre os dois usuários
+    // Usando duas queries separadas para evitar problemas com OR/AND complexos
+    const { data: conversations, error: convError } = await supabase
       .from('conversations')
-      .select('id, ativo, reinteracao_permitida_em')
+      .select('id, user1_id, user2_id, ativo, reinteracao_permitida_em')
       .eq('place_id', placeId)
-      .or(`and(user1_id.eq.${user.id},user2_id.eq.${toUserId}),and(user1_id.eq.${toUserId},user2_id.eq.${user.id})`)
-      .maybeSingle();
+      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
 
+    // Erro real de banco (não ausência de dados)
     if (convError) {
       console.error('[useWaves] Error checking conversation:', convError);
       return { error: new Error('Erro ao verificar estado da conversa') };
     }
 
-    if (existingConversation) {
+    // Filtrar apenas conversas com o usuário alvo
+    const relevantConversation = (conversations || []).find(conv => {
+      // Verifica se a conversa envolve ambos os usuários
+      const isUser1 = conv.user1_id === user.id || conv.user1_id === toUserId;
+      const isUser2 = conv.user2_id === user.id || conv.user2_id === toUserId;
+      return isUser1 && isUser2;
+    }) as { id: string; ativo: boolean; reinteracao_permitida_em: string | null } | undefined;
+
+    if (relevantConversation) {
       // Conversa ativa
-      if (existingConversation.ativo) {
+      if (relevantConversation.ativo) {
         return { error: new Error('Você já tem uma conversa ativa com esta pessoa') };
       }
       
       // Conversa em cooldown
-      const cooldownEnd = existingConversation.reinteracao_permitida_em
-        ? new Date(existingConversation.reinteracao_permitida_em)
+      const cooldownEnd = relevantConversation.reinteracao_permitida_em
+        ? new Date(relevantConversation.reinteracao_permitida_em)
         : null;
       
       if (cooldownEnd && cooldownEnd > new Date()) {
@@ -162,20 +171,25 @@ export function useWaves() {
 
     // 2. Verificar aceno pendente (consulta o banco, não estado local)
     const now = new Date().toISOString();
-    const { data: existingWave, error: waveError } = await supabase
+    const { data: existingWaves, error: waveError } = await supabase
       .from('waves')
-      .select('id')
+      .select('id, place_id, location_id, expires_at')
       .eq('de_user_id', user.id)
       .eq('para_user_id', toUserId)
-      .eq('status', 'pending')
-      .or(`place_id.eq.${placeId},location_id.eq.${placeId}`)
-      .or(`expires_at.is.null,expires_at.gt.${now}`)
-      .maybeSingle();
+      .eq('status', 'pending');
 
+    // Erro real de banco (não ausência de dados)
     if (waveError) {
       console.error('[useWaves] Error checking existing wave:', waveError);
       return { error: new Error('Erro ao verificar acenos existentes') };
     }
+
+    // Filtrar waves válidos no cliente (evita OR complexo no Supabase)
+    const existingWave = (existingWaves || []).find(wave => {
+      const isCurrentPlace = wave.place_id === placeId || wave.location_id === placeId;
+      const isNotExpired = !wave.expires_at || new Date(wave.expires_at) > new Date();
+      return isCurrentPlace && isNotExpired;
+    });
 
     if (existingWave) {
       return { error: new Error('Você já acenou para esta pessoa neste local') };
