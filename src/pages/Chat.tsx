@@ -87,14 +87,16 @@ export default function Chat() {
     }
   };
 
-  // Show full-screen chat when active
+  // Show chat within MobileLayout when active
   if (chatState.isActive && chatState.conversation) {
     return (
-      <ChatWindow
-        conversation={chatState.conversation}
-        onClose={closeChat}
-        onEndChat={handleEndChat}
-      />
+      <MobileLayout>
+        <ChatWindow
+          conversation={chatState.conversation}
+          onClose={closeChat}
+          onEndChat={handleEndChat}
+        />
+      </MobileLayout>
     );
   }
 
