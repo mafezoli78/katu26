@@ -222,12 +222,30 @@ export function useWaves() {
   /**
    * Accept a wave and create a conversation.
    * Validates that both users are at the same place.
+   * 
+   * IMPORTANTE: Valida SEMPRE no banco, nunca em estado local.
+   * Isso garante alinhamento com useInteractionState e sendWave.
    */
   const acceptWave = async (waveId: string): Promise<{ error: Error | null; conversation: Conversation | null }> => {
     if (!user) return { error: new Error('Not authenticated'), conversation: null };
 
-    // Find the wave in received waves
-    const wave = receivedWaves.find(w => w.id === waveId);
+    // =========================================================================
+    // VALIDAÇÃO ÚNICA: Consulta o banco diretamente (nunca estado local)
+    // Alinhado com sendWave - mesma fonte de verdade.
+    // =========================================================================
+    
+    // 1. Buscar wave no banco para validação
+    const { data: wave, error: waveError } = await supabase
+      .from('waves')
+      .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at')
+      .eq('id', waveId)
+      .maybeSingle();
+
+    if (waveError) {
+      console.error('[useWaves] Error fetching wave:', waveError);
+      return { error: new Error('Erro ao buscar aceno'), conversation: null };
+    }
+
     if (!wave) {
       return { error: new Error('Aceno não encontrado'), conversation: null };
     }
@@ -237,7 +255,12 @@ export function useWaves() {
       return { error: new Error('Você não pode aceitar seu próprio aceno'), conversation: null };
     }
 
-    // Check if wave is still valid
+    // Verify I'm the recipient
+    if (wave.para_user_id !== user.id) {
+      return { error: new Error('Este aceno não é para você'), conversation: null };
+    }
+
+    // Check if wave is still valid (time-based)
     if (wave.expires_at && new Date(wave.expires_at) <= new Date()) {
       // Remove expired wave from local state
       setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
@@ -249,11 +272,64 @@ export function useWaves() {
       return { error: new Error('Este aceno já foi aceito'), conversation: null };
     }
 
+    // Check if status is not pending (expired by system)
+    if (wave.status !== 'pending') {
+      setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
+      return { error: new Error('Este aceno não está mais disponível'), conversation: null };
+    }
+
     // Get place_id - prefer the new field, fall back to location_id
     const placeId = wave.place_id || wave.location_id;
 
     if (!placeId) {
       return { error: new Error('Este aceno não possui um local válido'), conversation: null };
+    }
+
+    // 2. Verificar se já existe conversa ativa ou em cooldown
+    const { data: existingConversations, error: convError } = await supabase
+      .from('conversations')
+      .select('id, ativo, reinteracao_permitida_em')
+      .eq('place_id', placeId)
+      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
+    if (convError) {
+      console.error('[useWaves] Error checking conversation:', convError);
+      return { error: new Error('Erro ao verificar conversas existentes'), conversation: null };
+    }
+
+    // Filtrar conversa com o remetente do wave
+    const existingConv = (existingConversations || []).find(conv => {
+      // Precisamos checar se envolve o de_user_id
+      // Como só temos user1/user2, verificamos na próxima query
+      return true;
+    });
+
+    // Verificação mais precisa de conversa existente
+    const { data: preciseConv } = await supabase
+      .from('conversations')
+      .select('id, user1_id, user2_id, ativo, reinteracao_permitida_em')
+      .eq('place_id', placeId)
+      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (preciseConv) {
+      const involvesWaveSender = 
+        preciseConv.user1_id === wave.de_user_id || 
+        preciseConv.user2_id === wave.de_user_id;
+
+      if (involvesWaveSender) {
+        if (preciseConv.ativo) {
+          return { error: new Error('Você já tem uma conversa ativa com esta pessoa'), conversation: null };
+        }
+
+        const cooldownEnd = preciseConv.reinteracao_permitida_em
+          ? new Date(preciseConv.reinteracao_permitida_em)
+          : null;
+
+        if (cooldownEnd && cooldownEnd > new Date()) {
+          return { error: new Error('Não é possível interagir - período de espera ativo'), conversation: null };
+        }
+      }
     }
 
     try {
