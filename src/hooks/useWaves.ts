@@ -3,6 +3,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { PRESENCE_DURATION_MS } from '@/config/presence';
 
+/**
+ * IMPORTANTE: Este hook mantém estado local de waves para a UI da página Waves.
+ * 
+ * Para validação de ações (sendWave, acceptWave), SEMPRE consultamos o banco
+ * diretamente para evitar decisões baseadas em estado stale.
+ * 
+ * O useInteractionData é a fonte de verdade para o estado do botão no PersonCard.
+ * Este hook NÃO deve ser usado para determinar se uma ação é permitida - 
+ * a validação deve sempre ir ao banco.
+ */
+
 export interface Wave {
   id: string;
   de_user_id: string;
@@ -115,23 +126,56 @@ export function useWaves() {
       return { error: new Error('Você não pode acenar para si mesmo') };
     }
 
-    // R1: Check if there's an active conversation with this user at this place
-    const { data: existingConversation } = await supabase
+    // =========================================================================
+    // VALIDAÇÃO ÚNICA: Consulta o banco diretamente (nunca estado local)
+    // Isso garante que decisões de UI e backend estejam sempre alinhadas.
+    // =========================================================================
+    
+    // 1. Verificar conversa ativa OU em cooldown neste local
+    const { data: existingConversation, error: convError } = await supabase
       .from('conversations')
-      .select('id')
-      .eq('ativo', true)
+      .select('id, ativo, reinteracao_permitida_em')
       .eq('place_id', placeId)
       .or(`and(user1_id.eq.${user.id},user2_id.eq.${toUserId}),and(user1_id.eq.${toUserId},user2_id.eq.${user.id})`)
       .maybeSingle();
 
-    if (existingConversation) {
-      return { error: new Error('Você já tem uma conversa ativa com esta pessoa') };
+    if (convError) {
+      console.error('[useWaves] Error checking conversation:', convError);
+      return { error: new Error('Erro ao verificar estado da conversa') };
     }
 
-    // Check if wave already sent to this user at this place
-    const existingWave = sentWaves.find(
-      w => w.para_user_id === toUserId && (w.place_id === placeId || w.location_id === placeId)
-    );
+    if (existingConversation) {
+      // Conversa ativa
+      if (existingConversation.ativo) {
+        return { error: new Error('Você já tem uma conversa ativa com esta pessoa') };
+      }
+      
+      // Conversa em cooldown
+      const cooldownEnd = existingConversation.reinteracao_permitida_em
+        ? new Date(existingConversation.reinteracao_permitida_em)
+        : null;
+      
+      if (cooldownEnd && cooldownEnd > new Date()) {
+        return { error: new Error('Não é possível acenar - interação recente neste local') };
+      }
+    }
+
+    // 2. Verificar aceno pendente (consulta o banco, não estado local)
+    const now = new Date().toISOString();
+    const { data: existingWave, error: waveError } = await supabase
+      .from('waves')
+      .select('id')
+      .eq('de_user_id', user.id)
+      .eq('para_user_id', toUserId)
+      .eq('status', 'pending')
+      .or(`place_id.eq.${placeId},location_id.eq.${placeId}`)
+      .or(`expires_at.is.null,expires_at.gt.${now}`)
+      .maybeSingle();
+
+    if (waveError) {
+      console.error('[useWaves] Error checking existing wave:', waveError);
+      return { error: new Error('Erro ao verificar acenos existentes') };
+    }
 
     if (existingWave) {
       return { error: new Error('Você já acenou para esta pessoa neste local') };
