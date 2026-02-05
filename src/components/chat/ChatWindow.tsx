@@ -61,8 +61,8 @@ export function ChatWindow({ conversation, onClose, onEndChat }: ChatWindowProps
 
   return (
     <div className="flex flex-col h-[calc(100dvh-5rem)] bg-background">
-      {/* Header - sticky to remain visible when keyboard opens */}
-      <div className="sticky top-0 z-30 flex items-center justify-between p-4 border-b bg-card flex-shrink-0">
+      {/* Header - fixed to viewport, immune to keyboard */}
+      <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between p-4 border-b bg-card">
         <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
             <AvatarImage src={conversation.otherUser.foto_url || undefined} />
@@ -98,6 +98,8 @@ export function ChatWindow({ conversation, onClose, onEndChat }: ChatWindowProps
         </div>
       </div>
 
+      {/* Spacer for fixed header */}
+      <div className="flex-shrink-0 h-[4.5rem]" />
       {/* Messages */}
       <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
         {loading ? (
