@@ -2,16 +2,22 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { PRESENCE_DURATION_MS } from '@/config/presence';
+import { 
+  deriveFacts, 
+  canWave, 
+  canAcceptWave,
+  type InteractionData,
+} from '@/lib/interactionRules';
 
 /**
  * IMPORTANTE: Este hook mantém estado local de waves para a UI da página Waves.
  * 
- * Para validação de ações (sendWave, acceptWave), SEMPRE consultamos o banco
- * diretamente para evitar decisões baseadas em estado stale.
+ * Para validação de ações (sendWave, acceptWave), usamos a função canônica
+ * de interactionRules.ts após buscar dados frescos do banco.
  * 
  * O useInteractionData é a fonte de verdade para o estado do botão no PersonCard.
  * Este hook NÃO deve ser usado para determinar se uma ação é permitida - 
- * a validação deve sempre ir ao banco.
+ * a validação deve sempre ir ao banco via função canônica.
  */
 
 export interface Wave {
@@ -110,92 +116,95 @@ export function useWaves() {
 
   /**
    * Send a wave to another user at a specific place.
-   * REQUIRES: placeId (the user's current place)
-   * R1: Prevents waving to users with active conversations
+   * USA A FUNÇÃO CANÔNICA de interactionRules.ts para validação.
    */
   const sendWave = async (toUserId: string, placeId: string) => {
     if (!user) return { error: new Error('Not authenticated') };
 
-    // CRITICAL: place_id is mandatory
     if (!placeId) {
       return { error: new Error('place_id é obrigatório para enviar aceno') };
     }
 
-    // Prevent sending wave to self
     if (toUserId === user.id) {
       return { error: new Error('Você não pode acenar para si mesmo') };
     }
 
     // =========================================================================
-    // VALIDAÇÃO ÚNICA: Consulta o banco diretamente (nunca estado local)
-    // Isso garante que decisões de UI e backend estejam sempre alinhadas.
+    // VALIDAÇÃO CANÔNICA: Busca dados frescos e usa função única
     // =========================================================================
-    
-    // 1. Verificar conversas neste local entre os dois usuários
-    // Usando duas queries separadas para evitar problemas com OR/AND complexos
-    const { data: conversations, error: convError } = await supabase
-      .from('conversations')
-      .select('id, user1_id, user2_id, ativo, reinteracao_permitida_em')
-      .eq('place_id', placeId)
-      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+    try {
+      const now = new Date();
+      const nowISO = now.toISOString();
 
-    // Erro real de banco (não ausência de dados)
-    if (convError) {
-      console.error('[useWaves] Error checking conversation:', convError);
-      return { error: new Error('Erro ao verificar estado da conversa') };
-    }
+      // Buscar todos os dados necessários em paralelo
+      const [blocksResult, mutesResult, conversationsResult, wavesResult] = await Promise.all([
+        // Bloqueios envolvendo ambos os usuários
+        supabase
+          .from('user_blocks')
+          .select('user_id, blocked_user_id')
+          .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`),
+        
+        // Mutes ativos do usuário atual
+        supabase
+          .from('user_mutes')
+          .select('user_id, muted_user_id, expira_em')
+          .eq('user_id', user.id)
+          .gt('expira_em', nowISO),
+        
+        // Conversas neste local
+        supabase
+          .from('conversations')
+          .select('id, user1_id, user2_id, place_id, ativo, encerrado_por, reinteracao_permitida_em')
+          .eq('place_id', placeId)
+          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`),
+        
+        // Waves pendentes entre os usuários neste local
+        supabase
+          .from('waves')
+          .select('id, de_user_id, para_user_id, place_id, status, expires_at')
+          .eq('place_id', placeId)
+          .eq('status', 'pending')
+          .or(`de_user_id.eq.${user.id},para_user_id.eq.${user.id}`),
+      ]);
 
-    // Filtrar apenas conversas com o usuário alvo
-    const relevantConversation = (conversations || []).find(conv => {
-      // Verifica se a conversa envolve ambos os usuários
-      const isUser1 = conv.user1_id === user.id || conv.user1_id === toUserId;
-      const isUser2 = conv.user2_id === user.id || conv.user2_id === toUserId;
-      return isUser1 && isUser2;
-    }) as { id: string; ativo: boolean; reinteracao_permitida_em: string | null } | undefined;
+      // Verificar erros de banco
+      if (blocksResult.error) throw blocksResult.error;
+      if (mutesResult.error) throw mutesResult.error;
+      if (conversationsResult.error) throw conversationsResult.error;
+      if (wavesResult.error) throw wavesResult.error;
 
-    if (relevantConversation) {
-      // Conversa ativa
-      if (relevantConversation.ativo) {
-        return { error: new Error('Você já tem uma conversa ativa com esta pessoa') };
+      // Preparar dados para função canônica
+      const data: InteractionData = {
+        blocks: (blocksResult.data || []).filter(
+          b => b.blocked_user_id === toUserId || b.user_id === toUserId
+        ),
+        mutes: (mutesResult.data || []).filter(
+          m => m.muted_user_id === toUserId
+        ),
+        conversations: (conversationsResult.data || []).filter(
+          c => c.user1_id === toUserId || c.user2_id === toUserId
+        ),
+        waves: (wavesResult.data || []).filter(
+          w => w.de_user_id === toUserId || w.para_user_id === toUserId
+        ),
+      };
+
+      // Derivar fatos e verificar permissão
+      const facts = deriveFacts(user.id, toUserId, placeId, now, data);
+      const permission = canWave(facts);
+
+      if (!permission.allowed) {
+        return { error: new Error(permission.reason || 'Ação não permitida') };
       }
-      
-      // Conversa em cooldown
-      const cooldownEnd = relevantConversation.reinteracao_permitida_em
-        ? new Date(relevantConversation.reinteracao_permitida_em)
-        : null;
-      
-      if (cooldownEnd && cooldownEnd > new Date()) {
-        return { error: new Error('Não é possível acenar - interação recente neste local') };
-      }
+
+    } catch (error) {
+      console.error('[useWaves] Error validating wave:', error);
+      return { error: new Error('Erro ao verificar permissões') };
     }
 
-    // 2. Verificar aceno pendente (consulta o banco, não estado local)
-    const now = new Date().toISOString();
-    const { data: existingWaves, error: waveError } = await supabase
-      .from('waves')
-      .select('id, place_id, location_id, expires_at')
-      .eq('de_user_id', user.id)
-      .eq('para_user_id', toUserId)
-      .eq('status', 'pending');
-
-    // Erro real de banco (não ausência de dados)
-    if (waveError) {
-      console.error('[useWaves] Error checking existing wave:', waveError);
-      return { error: new Error('Erro ao verificar acenos existentes') };
-    }
-
-    // Filtrar waves válidos no cliente (evita OR complexo no Supabase)
-    const existingWave = (existingWaves || []).find(wave => {
-      const isCurrentPlace = wave.place_id === placeId || wave.location_id === placeId;
-      const isNotExpired = !wave.expires_at || new Date(wave.expires_at) > new Date();
-      return isCurrentPlace && isNotExpired;
-    });
-
-    if (existingWave) {
-      return { error: new Error('Você já acenou para esta pessoa neste local') };
-    }
-
-    // Calculate expiration based on presence duration
+    // =========================================================================
+    // EXECUÇÃO: Criar wave no banco
+    // =========================================================================
     const expiresAt = new Date(Date.now() + PRESENCE_DURATION_MS).toISOString();
 
     const { data, error } = await supabase
@@ -203,8 +212,8 @@ export function useWaves() {
       .insert({
         de_user_id: user.id,
         para_user_id: toUserId,
-        location_id: placeId, // Keep for backwards compatibility
-        place_id: placeId,    // New source of truth
+        location_id: placeId,
+        place_id: placeId,
         expires_at: expiresAt,
         status: 'pending'
       })
@@ -212,7 +221,6 @@ export function useWaves() {
       .single();
 
     if (!error && data) {
-      // Update local state immediately
       setSentWaves(prev => [data as Wave, ...prev]);
     }
 
@@ -221,20 +229,14 @@ export function useWaves() {
 
   /**
    * Accept a wave and create a conversation.
-   * Validates that both users are at the same place.
-   * 
-   * IMPORTANTE: Valida SEMPRE no banco, nunca em estado local.
-   * Isso garante alinhamento com useInteractionState e sendWave.
+   * USA A FUNÇÃO CANÔNICA de interactionRules.ts para validação.
    */
   const acceptWave = async (waveId: string): Promise<{ error: Error | null; conversation: Conversation | null }> => {
     if (!user) return { error: new Error('Not authenticated'), conversation: null };
 
     // =========================================================================
-    // VALIDAÇÃO ÚNICA: Consulta o banco diretamente (nunca estado local)
-    // Alinhado com sendWave - mesma fonte de verdade.
+    // 1. BUSCAR WAVE NO BANCO
     // =========================================================================
-    
-    // 1. Buscar wave no banco para validação
     const { data: wave, error: waveError } = await supabase
       .from('waves')
       .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at')
@@ -250,90 +252,96 @@ export function useWaves() {
       return { error: new Error('Aceno não encontrado'), conversation: null };
     }
 
-    // Prevent accepting own wave
+    // Validações básicas do wave
     if (wave.de_user_id === user.id) {
       return { error: new Error('Você não pode aceitar seu próprio aceno'), conversation: null };
     }
 
-    // Verify I'm the recipient
     if (wave.para_user_id !== user.id) {
       return { error: new Error('Este aceno não é para você'), conversation: null };
     }
 
-    // Check if wave is still valid (time-based)
     if (wave.expires_at && new Date(wave.expires_at) <= new Date()) {
-      // Remove expired wave from local state
       setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
       return { error: new Error('Este aceno expirou'), conversation: null };
     }
 
-    // Check if already accepted
-    if (wave.status === 'accepted') {
-      return { error: new Error('Este aceno já foi aceito'), conversation: null };
-    }
-
-    // Check if status is not pending (expired by system)
     if (wave.status !== 'pending') {
       setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
       return { error: new Error('Este aceno não está mais disponível'), conversation: null };
     }
 
-    // Get place_id - prefer the new field, fall back to location_id
     const placeId = wave.place_id || wave.location_id;
-
     if (!placeId) {
       return { error: new Error('Este aceno não possui um local válido'), conversation: null };
     }
 
-    // 2. Verificar se já existe conversa ativa ou em cooldown
-    const { data: existingConversations, error: convError } = await supabase
-      .from('conversations')
-      .select('id, ativo, reinteracao_permitida_em')
-      .eq('place_id', placeId)
-      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
-
-    if (convError) {
-      console.error('[useWaves] Error checking conversation:', convError);
-      return { error: new Error('Erro ao verificar conversas existentes'), conversation: null };
-    }
-
-    // Filtrar conversa com o remetente do wave
-    const existingConv = (existingConversations || []).find(conv => {
-      // Precisamos checar se envolve o de_user_id
-      // Como só temos user1/user2, verificamos na próxima query
-      return true;
-    });
-
-    // Verificação mais precisa de conversa existente
-    const { data: preciseConv } = await supabase
-      .from('conversations')
-      .select('id, user1_id, user2_id, ativo, reinteracao_permitida_em')
-      .eq('place_id', placeId)
-      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-      .maybeSingle();
-
-    if (preciseConv) {
-      const involvesWaveSender = 
-        preciseConv.user1_id === wave.de_user_id || 
-        preciseConv.user2_id === wave.de_user_id;
-
-      if (involvesWaveSender) {
-        if (preciseConv.ativo) {
-          return { error: new Error('Você já tem uma conversa ativa com esta pessoa'), conversation: null };
-        }
-
-        const cooldownEnd = preciseConv.reinteracao_permitida_em
-          ? new Date(preciseConv.reinteracao_permitida_em)
-          : null;
-
-        if (cooldownEnd && cooldownEnd > new Date()) {
-          return { error: new Error('Não é possível interagir - período de espera ativo'), conversation: null };
-        }
-      }
-    }
-
+    // =========================================================================
+    // 2. VALIDAÇÃO CANÔNICA: Busca dados frescos e usa função única
+    // =========================================================================
     try {
-      // Step 1: Verify place exists
+      const now = new Date();
+      const nowISO = now.toISOString();
+      const otherUserId = wave.de_user_id;
+
+      const [blocksResult, mutesResult, conversationsResult, wavesResult] = await Promise.all([
+        supabase
+          .from('user_blocks')
+          .select('user_id, blocked_user_id')
+          .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`),
+        
+        supabase
+          .from('user_mutes')
+          .select('user_id, muted_user_id, expira_em')
+          .eq('user_id', user.id)
+          .gt('expira_em', nowISO),
+        
+        supabase
+          .from('conversations')
+          .select('id, user1_id, user2_id, place_id, ativo, encerrado_por, reinteracao_permitida_em')
+          .eq('place_id', placeId)
+          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`),
+        
+        supabase
+          .from('waves')
+          .select('id, de_user_id, para_user_id, place_id, status, expires_at')
+          .eq('place_id', placeId)
+          .eq('status', 'pending')
+          .or(`de_user_id.eq.${user.id},para_user_id.eq.${user.id}`),
+      ]);
+
+      if (blocksResult.error) throw blocksResult.error;
+      if (mutesResult.error) throw mutesResult.error;
+      if (conversationsResult.error) throw conversationsResult.error;
+      if (wavesResult.error) throw wavesResult.error;
+
+      const data: InteractionData = {
+        blocks: (blocksResult.data || []).filter(
+          b => b.blocked_user_id === otherUserId || b.user_id === otherUserId
+        ),
+        mutes: (mutesResult.data || []).filter(
+          m => m.muted_user_id === otherUserId
+        ),
+        conversations: (conversationsResult.data || []).filter(
+          c => c.user1_id === otherUserId || c.user2_id === otherUserId
+        ),
+        waves: (wavesResult.data || []).filter(
+          w => w.de_user_id === otherUserId || w.para_user_id === otherUserId
+        ),
+      };
+
+      const facts = deriveFacts(user.id, otherUserId, placeId, now, data);
+      const permission = canAcceptWave(facts);
+
+      if (!permission.allowed) {
+        return { error: new Error(permission.reason || 'Ação não permitida'), conversation: null };
+      }
+
+      // =========================================================================
+      // 3. EXECUÇÃO: Atualizar wave e criar conversa
+      // =========================================================================
+      
+      // Verificar se place existe
       const { data: place, error: placeError } = await supabase
         .from('places')
         .select('id')
@@ -345,7 +353,7 @@ export function useWaves() {
         return { error: new Error('Local não encontrado'), conversation: null };
       }
 
-      // Step 2: Update wave status
+      // Atualizar status do wave
       const { error: updateError } = await supabase
         .from('waves')
         .update({
@@ -354,10 +362,9 @@ export function useWaves() {
           visualizado: true
         })
         .eq('id', waveId)
-        .eq('status', 'pending'); // Ensure it's still pending (race condition protection)
+        .eq('status', 'pending');
 
       if (updateError) {
-        // Check if it was already accepted by someone else
         if (updateError.message.includes('0 rows')) {
           setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
           return { error: new Error('Este aceno já foi aceito por outro usuário'), conversation: null };
@@ -365,7 +372,7 @@ export function useWaves() {
         throw updateError;
       }
 
-      // Step 3: Create conversation with validated place_id
+      // Criar conversa
       const { data: conversationData, error: conversationError } = await supabase
         .from('conversations')
         .insert({
@@ -378,9 +385,7 @@ export function useWaves() {
         .single();
 
       if (conversationError) {
-        // Check if it's a duplicate (unique constraint violation)
         if (conversationError.code === '23505') {
-          // Conversation already exists, fetch it
           const { data: existingConversation } = await supabase
             .from('conversations')
             .select('*')
@@ -390,25 +395,21 @@ export function useWaves() {
             .maybeSingle();
 
           if (existingConversation) {
-            // Remove wave from local state
             setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
             return { error: null, conversation: existingConversation as Conversation };
           }
         }
 
-        // Rollback wave status if conversation creation failed
+        // Rollback wave status
         await supabase
           .from('waves')
-          .update({
-            status: 'pending',
-            accepted_by: null
-          })
+          .update({ status: 'pending', accepted_by: null })
           .eq('id', waveId);
 
         throw conversationError;
       }
 
-      // Step 4: Update local state
+      // Atualizar estado local
       setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
       setUnreadCount(prev => Math.max(0, prev - 1));
 
