@@ -46,6 +46,10 @@ export interface InteractionFacts {
   hasCooldown: boolean;
   /** Se hasCooldown, A foi quem encerrou */
   cooldownByA: boolean;
+  /** Existe qualquer conversa (ativa ou não) entre A↔B neste place */
+  hasAnyConversation: boolean;
+  /** Se hasAnyConversation e não ativa, A foi quem encerrou */
+  closedByA: boolean;
   /** Existe wave pendente de B→A (não expirado) */
   hasWaveFromB: boolean;
   /** Existe wave pendente de A→B (não expirado) */
@@ -164,7 +168,38 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
     }
   }
 
-  // 5. WAVE RECEBIDO - pode responder
+  // 5. CONVERSA ENCERRADA (sem cooldown) - regra de negócio: não pode reacenar
+  if (facts.hasAnyConversation && !facts.hasActiveChat && !facts.hasCooldown) {
+    if (facts.closedByA) {
+      return {
+        state: InteractionState.ENDED_BY_ME,
+        stateName: 'ENDED_BY_ME',
+        button: {
+          label: 'Interação encerrada',
+          disabled: true,
+          action: 'none',
+          conversationId: facts.conversationId,
+        },
+        isVisible: true,
+        blockReason: 'Você encerrou esta interação',
+      };
+    } else {
+      return {
+        state: InteractionState.ENDED_BY_OTHER,
+        stateName: 'ENDED_BY_OTHER',
+        button: {
+          label: 'Interação indisponível',
+          disabled: true,
+          action: 'none',
+          conversationId: facts.conversationId,
+        },
+        isVisible: true,
+        blockReason: 'O outro usuário encerrou a interação',
+      };
+    }
+  }
+
+  // 6. WAVE RECEBIDO - pode responder
   if (facts.hasWaveFromB) {
     return {
       state: InteractionState.WAVE_RECEIVED,
@@ -178,7 +213,7 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
     };
   }
 
-  // 6. WAVE ENVIADO - aguardando resposta
+  // 7. WAVE ENVIADO - aguardando resposta
   if (facts.hasWaveFromA) {
     return {
       state: InteractionState.WAVE_SENT,
@@ -193,7 +228,7 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
     };
   }
 
-  // 7. NENHUMA INTERAÇÃO - pode acenar
+  // 8. NENHUMA INTERAÇÃO - pode acenar
   return {
     state: InteractionState.NONE,
     stateName: 'NONE',
@@ -292,6 +327,8 @@ export function deriveFacts(
   );
 
   const hasActiveChat = conversation?.ativo === true;
+  const hasAnyConversation = conversation !== undefined;
+  const closedByA = hasAnyConversation && !conversation.ativo && conversation.encerrado_por === userA;
 
   // 4. COOLDOWN - conversa encerrada com reinteração bloqueada
   const cooldownEnd = conversation?.reinteracao_permitida_em
@@ -322,6 +359,8 @@ export function deriveFacts(
     hasActiveChat,
     hasCooldown,
     cooldownByA,
+    hasAnyConversation,
+    closedByA,
     hasWaveFromB,
     hasWaveFromA,
     conversationId: conversation?.id,
@@ -351,6 +390,9 @@ export function canWave(facts: InteractionFacts): { allowed: boolean; reason?: s
   }
   if (facts.hasCooldown) {
     return { allowed: false, reason: 'Não é possível acenar - interação recente neste local' };
+  }
+  if (facts.hasAnyConversation) {
+    return { allowed: false, reason: 'Já houve uma conversa com esta pessoa neste local' };
   }
   if (facts.hasWaveFromA) {
     return { allowed: false, reason: 'Você já acenou para esta pessoa neste local' };
