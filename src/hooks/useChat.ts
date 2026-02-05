@@ -230,6 +230,8 @@ export function useChat(options?: UseChatOptions) {
           encerrado_por: user.id,
           encerrado_em: new Date().toISOString(),
           encerrado_motivo: reason,
+          // Apply 24h cooldown - same as end_presence_cascade
+          reinteracao_permitida_em: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .eq('id', conversationId);
 
