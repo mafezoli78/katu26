@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Navigation, Loader2, Users, Clock, Search, Plus, Check, X, UtensilsCrossed, Coffee, Beer, Music, ShoppingBag, Dumbbell, Briefcase, Building2, Store, Wifi } from 'lucide-react';
+import { MapPin, Navigation, Loader2, Users, Clock, Search, Plus, Check, X, UtensilsCrossed, Coffee, Beer, Music, ShoppingBag, Dumbbell, Briefcase, Building2, Store } from 'lucide-react';
+import { TemporaryPlaceIcon } from '@/components/icons/TemporaryPlaceIcon';
 import { Place, PROXIMITY_THRESHOLD_METERS } from '@/services/placesService';
 import { NearbyTemporaryPlace } from '@/hooks/usePresence';
 interface PlaceSelectorProps {
@@ -147,7 +148,7 @@ export function PlaceSelector({
               {temporaryPlaces.map(place => <div key={place.id} onClick={() => onSelectPlace(place.id)} className="bg-card rounded-xl p-3 shadow-sm border-2 border-katu-green/30 place-card cursor-pointer hover:border-katu-green/50">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-katu-green/10 flex items-center justify-center flex-shrink-0">
-                      <Wifi className="h-6 w-6 text-katu-green" />
+                      <TemporaryPlaceIcon className="h-6 w-6 text-katu-green" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold truncate">{place.nome}</h3>
