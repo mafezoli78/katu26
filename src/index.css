@@ -96,6 +96,11 @@
     @apply border-border;
   }
 
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -120,7 +125,7 @@
   }
   
   .mobile-container {
-    @apply max-w-md mx-auto min-h-screen;
+    @apply max-w-md mx-auto;
   }
 }
 
