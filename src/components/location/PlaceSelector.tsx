@@ -120,7 +120,7 @@ export function PlaceSelector({
             </Button>
             <Button className="flex-1 h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold" onClick={() => onSelectPlace(closestPlace.id)}>
               <Check className="h-4 w-4 mr-2" />
-              Tô aqui
+              Aqui
             </Button>
           </div>
         </div>
@@ -162,7 +162,7 @@ export function PlaceSelector({
                       </div>
                     </div>
                     <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4">
-                      Tô aqui
+                      Aqui
                     </Button>
                   </div>
                 </div>)}
@@ -195,8 +195,8 @@ export function PlaceSelector({
                         </div>
                       </div>
                       <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4">
-                        Tô aqui
-                      </Button>
+                      Aqui
+                    </Button>
                     </div>
                   </div>;
         })}
