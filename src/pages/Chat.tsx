@@ -92,14 +92,12 @@ export default function Chat() {
   // Show chat within MobileLayout when active
   if (chatState.isActive && chatState.conversation) {
     return (
-      <MobileLayout showHeader={false} showNav={!isKeyboardVisible}>
-        <div className="flex flex-col h-full overflow-hidden">
-          <ChatWindow
-            conversation={chatState.conversation}
-            onClose={closeChat}
-            onEndChat={handleEndChat}
-          />
-        </div>
+      <MobileLayout showHeader={false} showNav={!isKeyboardVisible} fixedHeight>
+        <ChatWindow
+          conversation={chatState.conversation}
+          onClose={closeChat}
+          onEndChat={handleEndChat}
+        />
       </MobileLayout>
     );
   }
