@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/hooks/use-toast';
 
 /**
  * Hook para buscar todos os dados necessários para alimentar useInteractionState.
@@ -295,6 +296,10 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
             oldRecord?.place_id === placeId;
           
           if (involvesUser && isCurrentPlace) {
+            // Notificar usuário quando recebe um novo aceno
+            if (payload.eventType === 'INSERT' && record?.para_user_id === user.id && record?.status === 'pending') {
+              toast({ title: 'Você recebeu um aceno! 👋' });
+            }
             fetchData();
           }
         }
