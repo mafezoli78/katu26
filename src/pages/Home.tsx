@@ -11,7 +11,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { PersonCard } from '@/components/home/PersonCard';
-import { Clock, RefreshCw, LogOut, Wifi, Store, Users } from 'lucide-react';
+import { Clock, RefreshCw, LogOut, Store, Users } from 'lucide-react';
+import { TemporaryPlaceIcon } from '@/components/icons/TemporaryPlaceIcon';
 
 export default function Home() {
   const { user } = useAuth();
@@ -146,7 +147,7 @@ export default function Home() {
               <div className="flex items-start gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isTemporaryPlace ? 'bg-katu-green/20' : 'bg-white/20'}`}>
                   {isTemporaryPlace ? (
-                    <Wifi className="h-5 w-5 text-white" />
+                    <TemporaryPlaceIcon className="h-5 w-5 text-white" />
                   ) : (
                     <Store className="h-5 w-5 text-white" />
                   )}
