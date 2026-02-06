@@ -168,36 +168,8 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
     }
   }
 
-  // 5. CONVERSA ENCERRADA (sem cooldown) - regra de negócio: não pode reacenar
-  if (facts.hasAnyConversation && !facts.hasActiveChat && !facts.hasCooldown) {
-    if (facts.closedByA) {
-      return {
-        state: InteractionState.ENDED_BY_ME,
-        stateName: 'ENDED_BY_ME',
-        button: {
-          label: 'Interação encerrada',
-          disabled: true,
-          action: 'none',
-          conversationId: facts.conversationId,
-        },
-        isVisible: true,
-        blockReason: 'Você encerrou esta interação',
-      };
-    } else {
-      return {
-        state: InteractionState.ENDED_BY_OTHER,
-        stateName: 'ENDED_BY_OTHER',
-        button: {
-          label: 'Interação indisponível',
-          disabled: true,
-          action: 'none',
-          conversationId: facts.conversationId,
-        },
-        isVisible: true,
-        blockReason: 'O outro usuário encerrou a interação',
-      };
-    }
-  }
+  // 5. COOLDOWN EXPIRADO - após 24h, libera nova interação
+  // Se havia conversa mas cooldown já expirou, permite acenar novamente (cai para NONE)
 
   // 6. WAVE RECEBIDO - pode responder
   if (facts.hasWaveFromB) {
@@ -390,9 +362,6 @@ export function canWave(facts: InteractionFacts): { allowed: boolean; reason?: s
   }
   if (facts.hasCooldown) {
     return { allowed: false, reason: 'Não é possível acenar - interação recente neste local' };
-  }
-  if (facts.hasAnyConversation) {
-    return { allowed: false, reason: 'Já houve uma conversa com esta pessoa neste local' };
   }
   if (facts.hasWaveFromA) {
     return { allowed: false, reason: 'Você já acenou para esta pessoa neste local' };
