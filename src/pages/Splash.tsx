@@ -65,7 +65,7 @@ export default function Splash() {
 
       {/* Tagline */}
       <p className="text-white/80 text-base mt-6 font-medium tracking-wide">
-        Conectando pessoas no mesmo lugar
+        o presente em movimento
       </p>
 
       {/* Loading bar */}
