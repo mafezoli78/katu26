@@ -4,7 +4,7 @@ import { useMessages } from '@/hooks/useMessages';
 import { ConversationWithDetails } from '@/hooks/useConversations';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { X, Send, Loader2, AlertCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -95,7 +95,7 @@ export function ChatWindow({
       </div>
 
       {/* Messages - only this area scrolls */}
-      <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4">
         {loading ? <div className="flex items-center justify-center h-32">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div> : messages.length === 0 ? <div className="flex flex-col items-center justify-center h-32 text-center">
@@ -121,7 +121,7 @@ export function ChatWindow({
                 </div>;
         })}
           </div>}
-      </ScrollArea>
+      </div>
 
       {/* Input - fixed at bottom, above nav */}
       <div className="flex-shrink-0 p-4 border-t bg-card">
