@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PersonCard } from '@/components/home/PersonCard';
 import { Clock, RefreshCw, LogOut, Store, Users } from 'lucide-react';
 import { TemporaryPlaceIcon } from '@/components/icons/TemporaryPlaceIcon';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Home() {
   const [openCardId, setOpenCardId] = useState<string | null>(null);
@@ -66,8 +67,86 @@ export default function Home() {
       toast({ variant: 'destructive', title: error.message });
     } else {
       toast({ title: 'Aceno enviado! 👋' });
-      // Refetch para atualizar estado do botão
       refetchInteractionData();
+    }
+  };
+
+  const handleMute = async (targetUserId: string) => {
+    if (!user || !currentPlace) return;
+    
+    // Check if already muted
+    const existingMute = activeMutes.find(
+      m => m.user_id === user.id && m.muted_user_id === targetUserId
+    );
+    
+    if (existingMute) {
+      // Remove mute
+      const { error } = await supabase
+        .from('user_mutes')
+        .delete()
+        .eq('id', existingMute.id);
+      
+      if (error) {
+        toast({ variant: 'destructive', title: 'Erro ao remover silenciamento' });
+      } else {
+        toast({ title: 'Silenciamento removido' });
+        refetchInteractionData();
+      }
+    } else {
+      // Create mute
+      const { error } = await supabase
+        .from('user_mutes')
+        .insert({
+          user_id: user.id,
+          muted_user_id: targetUserId,
+          place_id: currentPlace.id,
+        });
+      
+      if (error) {
+        toast({ variant: 'destructive', title: 'Erro ao silenciar' });
+      } else {
+        toast({ title: 'Usuário silenciado por 24h' });
+        refetchInteractionData();
+      }
+    }
+  };
+
+  const handleBlock = async (targetUserId: string) => {
+    if (!user) return;
+    
+    // Check if already blocked by me
+    const existingBlock = blocks.find(
+      b => b.user_id === user.id && b.blocked_user_id === targetUserId
+    );
+    
+    if (existingBlock) {
+      // Remove block
+      const { error } = await supabase
+        .from('user_blocks')
+        .delete()
+        .eq('id', existingBlock.id);
+      
+      if (error) {
+        toast({ variant: 'destructive', title: 'Erro ao remover bloqueio' });
+      } else {
+        toast({ title: 'Bloqueio removido' });
+        refetchInteractionData();
+      }
+    } else {
+      // Create block
+      const { error } = await supabase
+        .from('user_blocks')
+        .insert({
+          user_id: user.id,
+          blocked_user_id: targetUserId,
+        });
+      
+      if (error) {
+        toast({ variant: 'destructive', title: 'Erro ao bloquear' });
+      } else {
+        toast({ title: 'Usuário bloqueado' });
+        refetchInteractionData();
+      }
     }
   };
 
@@ -240,6 +319,8 @@ export default function Home() {
                 activeMutes={activeMutes}
                 blocks={blocks}
                 onWave={handleWave}
+                onMute={handleMute}
+                onBlock={handleBlock}
                 openCardId={openCardId}
                 onSwipeOpen={setOpenCardId}
               />
