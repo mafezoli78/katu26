@@ -309,7 +309,8 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
   }, [user?.id, placeId, fetchData]);
 
   // Realtime subscription para user_mutes
-  // Garante que silenciamentos reflitam imediatamente
+  // RLS já filtra por user_id = auth.uid(), então qualquer evento recebido é relevante
+  // Não verificar involvesUser pois DELETE events podem não ter payload.old completo
   useEffect(() => {
     if (!user?.id) return;
 
@@ -322,19 +323,8 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
           schema: 'public',
           table: 'user_mutes',
         },
-        (payload) => {
-          const record = payload.new as any;
-          const oldRecord = payload.old as any;
-          
-          const involvesUser = 
-            record?.user_id === user.id || 
-            record?.muted_user_id === user.id ||
-            oldRecord?.user_id === user.id ||
-            oldRecord?.muted_user_id === user.id;
-          
-          if (involvesUser) {
-            fetchData();
-          }
+        () => {
+          fetchData();
         }
       )
       .subscribe();
@@ -345,7 +335,7 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
   }, [user?.id, fetchData]);
 
   // Realtime subscription para user_blocks
-  // Garante que bloqueios reflitam imediatamente
+  // RLS já filtra por user_id/blocked_user_id = auth.uid(), qualquer evento é relevante
   useEffect(() => {
     if (!user?.id) return;
 
@@ -358,19 +348,8 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
           schema: 'public',
           table: 'user_blocks',
         },
-        (payload) => {
-          const record = payload.new as any;
-          const oldRecord = payload.old as any;
-          
-          const involvesUser = 
-            record?.user_id === user.id || 
-            record?.blocked_user_id === user.id ||
-            oldRecord?.user_id === user.id ||
-            oldRecord?.blocked_user_id === user.id;
-          
-          if (involvesUser) {
-            fetchData();
-          }
+        () => {
+          fetchData();
         }
       )
       .subscribe();
