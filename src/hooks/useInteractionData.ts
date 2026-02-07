@@ -283,20 +283,17 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
           const record = payload.new as any;
           const oldRecord = payload.old as any;
           
-          // Verificar se a mudança envolve o usuário atual
           const involvesUser = 
             record?.de_user_id === user.id || 
             record?.para_user_id === user.id ||
             oldRecord?.de_user_id === user.id ||
             oldRecord?.para_user_id === user.id;
           
-          // Verificar se é no local atual
           const isCurrentPlace = 
             record?.place_id === placeId ||
             oldRecord?.place_id === placeId;
           
           if (involvesUser && isCurrentPlace) {
-            // Notificar usuário quando recebe um novo aceno
             if (payload.eventType === 'INSERT' && record?.para_user_id === user.id && record?.status === 'pending') {
               toast({ title: 'Você recebeu um aceno! 👋' });
             }
@@ -310,6 +307,78 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
       supabase.removeChannel(channel);
     };
   }, [user?.id, placeId, fetchData]);
+
+  // Realtime subscription para user_mutes
+  // Garante que silenciamentos reflitam imediatamente
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`interaction-mutes-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_mutes',
+        },
+        (payload) => {
+          const record = payload.new as any;
+          const oldRecord = payload.old as any;
+          
+          const involvesUser = 
+            record?.user_id === user.id || 
+            record?.muted_user_id === user.id ||
+            oldRecord?.user_id === user.id ||
+            oldRecord?.muted_user_id === user.id;
+          
+          if (involvesUser) {
+            fetchData();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, fetchData]);
+
+  // Realtime subscription para user_blocks
+  // Garante que bloqueios reflitam imediatamente
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`interaction-blocks-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_blocks',
+        },
+        (payload) => {
+          const record = payload.new as any;
+          const oldRecord = payload.old as any;
+          
+          const involvesUser = 
+            record?.user_id === user.id || 
+            record?.blocked_user_id === user.id ||
+            oldRecord?.user_id === user.id ||
+            oldRecord?.blocked_user_id === user.id;
+          
+          if (involvesUser) {
+            fetchData();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, fetchData]);
 
   return {
     sentWaves,
