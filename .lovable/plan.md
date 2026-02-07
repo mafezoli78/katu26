@@ -1,93 +1,80 @@
 
 
-# Correcao do Header do Chat — Remover padding do Vite + Conter overflow global
+## Swipe para revelar ações nos cards de pessoa
 
-## Causa raiz
+### Resumo
 
-Dois problemas impedem a cadeia de overflow de funcionar:
+Adicionar interacao de swipe horizontal nos cards da Home, revelando botoes "Silenciar" e "Bloquear" por tras do card -- puramente visual, sem logica de negocio.
 
-1. `App.css` contem o template padrao do Vite com `#root { padding: 2rem }`, que adiciona 64px extras (32 top + 32 bottom) ao redor de TODO o app. Isso faz o `h-screen` (100vh) do MobileLayout estourar a viewport real.
+### Arquitetura do swipe
 
-2. `index.css` define `.mobile-container { @apply min-h-screen }` que conflita com `h-screen` quando `fixedHeight` esta ativo.
+**1. Onde fica o estado de "card aberto"**
 
-3. Nenhum ancestor (`html`, `body`, `#root`) tem `height: 100%` ou `overflow: hidden`, permitindo que o scroll vaze para o body.
+O estado `openCardId` ficara na pagina `Home.tsx` como um `useState<string | null>`. Sera passado como prop para cada `PersonCard`, junto com um callback `onSwipeOpen(id)`. Isso garante controle centralizado.
 
-## Correcoes (2 arquivos)
+O callback onSwipeOpen(id: string | null) deve aceitar também null, permitindo que o próprio card solicite fechamento (swipe para a direita), limpando o estado global.
 
-### Arquivo 1: `src/App.css`
+**2. Como garantir apenas um card aberto**
 
-Substituir TODO o conteudo por:
+Quando um card chama `onSwipeOpen(id)`, o Home atualiza `openCardId` para esse id. Todos os outros cards recebem a nova prop e fecham automaticamente (sua `translateX` volta a 0).
 
-```css
-#root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-}
-```
+Ao iniciar um swipe horizontal em um novo card, este deve chamar onSwipeOpen(person.id) ainda durante o onTouchMove, no momento em que ultrapassar o threshold de abertura, o que fecha automaticamente qualquer card previamente aberto, o que fecha automaticamente qualquer card previamente aberto.
 
-Remove o padding do Vite e estabelece `#root` como container de altura total.
+**3. Como o swipe horizontal nao quebrara o scroll vertical**
 
-### Arquivo 2: `src/index.css`
+Deteccao de direcao no `onTouchMove`: calcula `deltaX` e `deltaY` a partir do ponto inicial. Se |deltaY| > |deltaX| nos primeiros pixels de movimento, o gesto é classificado como scroll vertical e o swipe é cancelado definitivamente para aquele gesto. Uma vez classificado como horizontal, o card captura o gesto.
 
-Duas mudancas:
+Arraste para a direita (translateX próximo de 0) deve sempre resultar em fechamento do card no onTouchEnd do próprio PersonCard, com chamada onSwipeOpen(null).
 
-**Mudanca A** — Adicionar contencao global em `html` e `body` (dentro do bloco `@layer base` existente):
+---
 
-```css
-html, body {
-  height: 100%;
-  overflow: hidden;
-}
-```
+### Detalhes tecnicos
 
-**Mudanca B** — Remover `min-h-screen` da classe `.mobile-container`:
+#### Arquivos modificados
 
-Trocar:
-```css
-.mobile-container {
-  @apply max-w-md mx-auto min-h-screen;
-}
-```
+**`src/pages/Home.tsx`**
+- Adicionar `useState<string | null>(null)` para `openCardId`
+- Passar `openCardId` e `onSwipeOpen` como props para cada `PersonCard`
 
-Por:
-```css
-.mobile-container {
-  @apply max-w-md mx-auto;
-}
-```
+**`src/components/home/PersonCard.tsx`**
+- Novas props: `openCardId`, `onSwipeOpen`
+- Estado local: `translateX` (numero em px para o deslocamento do card)
+- Touch handlers: `onTouchStart`, `onTouchMove`, `onTouchEnd`
+- Logica de direcao: flag `directionLocked` (null | 'horizontal' | 'vertical')
+- Threshold de ~15-20px para decidir a direcao
+- `translateX` limitado entre `-BUTTON_WIDTH` e `0`
+- No `onTouchEnd`: snap para aberto (`-BUTTON_WIDTH`) ou fechado (`0`) baseado em threshold de 40%
+- `useEffect` que observa `openCardId`: se diferente do proprio `person.id`, reseta `translateX` para 0
+- O deslocamento horizontal não possui overscroll elástico; valores fora do range são clampados imediatamente.
 
-O `min-h-screen` sera controlado pelo MobileLayout via classes condicionais (`min-h-screen` normal ou `h-screen` com fixedHeight).
-
-### Nenhum outro arquivo alterado
-
-- `ChatWindow.tsx` — ja correto (header flex-shrink-0, messages flex-1 min-h-0 overflow-y-auto, input flex-shrink-0)
-- `MobileLayout.tsx` — ja correto (aplica h-screen quando fixedHeight, min-h-screen caso contrario)
-- `Chat.tsx` — ja correto (fixedHeight + showNav condicional)
-- `BottomNav.tsx` — ja correto (position fixed)
-
-## Cadeia final corrigida
+**Estrutura do JSX no PersonCard:**
 
 ```text
-html (height: 100%, overflow: hidden)
-  body (height: 100%, overflow: hidden)
-    #root (height: 100%, padding: 0)
-      MobileLayout (h-screen overflow-hidden)  [quando fixedHeight]
-        main (flex-1 overflow-hidden)
-          ChatWindow (flex flex-col h-full overflow-hidden)
-            Header (flex-shrink-0)              -- FIXO
-            Messages (flex-1 min-h-0 overflow-y-auto)  -- UNICO SCROLL
-            Input (flex-shrink-0)               -- FIXO
+<div className="relative overflow-hidden rounded-lg">
+  <!-- Camada de botoes (posicao absoluta, direita) -->
+  <div className="absolute right-0 top-0 bottom-0 flex flex-col w-[140px]">
+    <button "Silenciar" (metade superior, bg amarelo/muted)>
+    <button "Bloquear" (metade inferior, bg destructive)>
+  </div>
+
+  <!-- Card deslizante (transform: translateX) -->
+  <div style={{ transform: `translateX(${translateX}px)` }}>
+    <Card> ... conteudo atual ... </Card>
+  </div>
+</div>
 ```
 
-Cada nivel confina o overflow do filho. Nenhum scroll existe fora da area de mensagens.
+- Botoes com largura fixa de 140px
+- "Silenciar": `bg-amber-500 text-white` com icone `VolumeX`
+- "Bloquear": `bg-destructive text-destructive-foreground` com icone `Ban`
+- Ambos com `onClick={() => console.log('silenciar/bloquear', person.id)}`
+- Transição CSS transition-transform duration-200 aplicada somente após onTouchEnd.
+Durante onTouchMove, nenhuma transição ativa, para manter resposta 1:1 ao dedo. (removida durante arraste para feedback imediato)
 
-## Impacto em outras telas
+#### Icones
 
-- Telas sem `fixedHeight` (Home, Profile, Waves, Location) usam `min-h-screen` diretamente via MobileLayout, que ja aplica essa classe condicionalmente. O `overflow: hidden` no `html/body` nao afeta porque o conteudo dessas telas nao ultrapassa a viewport (e se ultrapassar, o scroll e tratado dentro do proprio conteudo via overflow-y-auto nos componentes internos).
-- A remocao de `min-h-screen` do `.mobile-container` e compensada pela classe `min-h-screen` que MobileLayout ja aplica quando `fixedHeight` e falso.
+Usar `VolumeX` e `Ban` do Lucide (ja instalado).
 
-## Risco
+#### Nenhum arquivo adicional criado
 
-Baixo. As unicas mudancas sao remocao de padding residual do Vite e adicao de contencao de overflow global, que e padrao em apps mobile-first.
-
+Toda a logica fica contida em `PersonCard.tsx` e a coordenacao em `Home.tsx`.
