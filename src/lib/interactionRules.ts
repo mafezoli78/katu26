@@ -308,13 +308,28 @@ export function deriveFacts(
       new Date(m.expira_em) > now
   );
 
-  // 3. CONVERSAS - buscar conversa relevante neste local
-  const conversation = data.conversations.find(
-    c =>
-      c.place_id === placeId &&
-      ((c.user1_id === userA && c.user2_id === userB) ||
-        (c.user1_id === userB && c.user2_id === userA))
-  );
+  // 3. CONVERSAS - buscar conversa MAIS RELEVANTE neste local
+  // Quando há múltiplas conversas entre o mesmo par no mesmo local,
+  // priorizar: ativa > cooldown válido > mais recente
+  const pairConversations = data.conversations
+    .filter(
+      c =>
+        c.place_id === placeId &&
+        ((c.user1_id === userA && c.user2_id === userB) ||
+          (c.user1_id === userB && c.user2_id === userA))
+    )
+    .sort((a, b) => {
+      // 1. Ativa sempre vem primeiro
+      if (a.ativo && !b.ativo) return -1;
+      if (!a.ativo && b.ativo) return 1;
+      // 2. Cooldown válido vem antes de expirado
+      const aCooldown = a.reinteracao_permitida_em && new Date(a.reinteracao_permitida_em) > now;
+      const bCooldown = b.reinteracao_permitida_em && new Date(b.reinteracao_permitida_em) > now;
+      if (aCooldown && !bCooldown) return -1;
+      if (!aCooldown && bCooldown) return 1;
+      return 0;
+    });
+  const conversation = pairConversations[0] ?? undefined;
 
   const hasActiveChat = conversation?.ativo === true;
   const hasAnyConversation = conversation !== undefined;
