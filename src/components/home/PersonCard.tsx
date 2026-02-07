@@ -4,10 +4,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInteractionState, InteractionState } from '@/hooks/useInteractionState';
+import { useAuth } from '@/contexts/AuthContext';
 import { PersonNearby } from '@/hooks/usePeopleNearby';
 import { NormalizedWave, NormalizedConversation, NormalizedMute, NormalizedBlock } from '@/hooks/useInteractionData';
 import { HandshakeIcon } from '@/components/icons/HandshakeIcon';
-import { VolumeX, Ban } from 'lucide-react';
+import { SwipeActions } from '@/components/home/SwipeActions';
 
 const BUTTON_WIDTH = 140;
 const DIRECTION_THRESHOLD = 15;
@@ -22,6 +23,8 @@ interface PersonCardProps {
   activeMutes: NormalizedMute[];
   blocks: NormalizedBlock[];
   onWave: (toUserId: string) => void;
+  onMute: (userId: string) => Promise<void>;
+  onBlock: (userId: string) => Promise<void>;
   openCardId: string | null;
   onSwipeOpen: (id: string | null) => void;
 }
@@ -42,10 +45,13 @@ export function PersonCard({
   activeMutes,
   blocks,
   onWave,
+  onMute,
+  onBlock,
   openCardId,
   onSwipeOpen,
 }: PersonCardProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   // Hook de estado - ÚNICA fonte de verdade
   const { state, stateName, button, isVisible } = useInteractionState({
@@ -57,6 +63,14 @@ export function PersonCard({
     activeMutes,
     blocks,
   });
+
+  // Derive mute/block states for swipe buttons
+  const isMutedByMe = activeMutes.some(
+    m => m.user_id === user?.id && m.muted_user_id === person.id
+  );
+  const isBlockedByMe = blocks.some(
+    b => b.user_id === user?.id && b.blocked_user_id === person.id
+  );
 
   // Swipe state
   const [translateX, setTranslateX] = useState(0);
@@ -191,22 +205,23 @@ export function PersonCard({
   return (
     <div className="relative overflow-hidden rounded-lg">
       {/* Action buttons behind the card */}
-      <div className="absolute right-0 top-0 bottom-0 flex flex-col w-[140px]">
-        <button
-          className="flex-1 flex flex-col items-center justify-center gap-1 bg-amber-500 text-white active:bg-amber-600"
-          onClick={() => console.log('silenciar', person.id)}
-        >
-          <VolumeX className="h-5 w-5" />
-          <span className="text-xs font-semibold">Silenciar</span>
-        </button>
-        <button
-          className="flex-1 flex flex-col items-center justify-center gap-1 bg-destructive text-destructive-foreground active:bg-destructive/90"
-          onClick={() => console.log('bloquear', person.id)}
-        >
-          <Ban className="h-5 w-5" />
-          <span className="text-xs font-semibold">Bloquear</span>
-        </button>
-      </div>
+      <SwipeActions
+        personId={person.id}
+        isMuted={isMutedByMe}
+        isBlocked={isBlockedByMe}
+        onMute={async () => {
+          await onMute(person.id);
+          setIsAnimating(true);
+          setTranslateX(0);
+          onSwipeOpen(null);
+        }}
+        onBlock={async () => {
+          await onBlock(person.id);
+          setIsAnimating(true);
+          setTranslateX(0);
+          onSwipeOpen(null);
+        }}
+      />
 
       {/* Sliding card */}
       <div
