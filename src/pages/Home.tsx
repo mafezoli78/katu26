@@ -89,8 +89,8 @@ export default function Home() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao remover silenciamento' });
       } else {
-        toast({ title: 'Silenciamento removido' });
-        refetchInteractionData();
+      toast({ title: 'Silenciamento removido' });
+        await refetchInteractionData();
       }
     } else {
       // Create mute
@@ -105,8 +105,8 @@ export default function Home() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao silenciar' });
       } else {
-        toast({ title: 'Usuário silenciado por 24h' });
-        refetchInteractionData();
+      toast({ title: 'Usuário silenciado por 24h' });
+        await refetchInteractionData();
       }
     }
   };
@@ -129,8 +129,8 @@ export default function Home() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao remover bloqueio' });
       } else {
-        toast({ title: 'Bloqueio removido' });
-        refetchInteractionData();
+      toast({ title: 'Bloqueio removido' });
+        await refetchInteractionData();
       }
     } else {
       // Create block
@@ -144,8 +144,8 @@ export default function Home() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao bloquear' });
       } else {
-        toast({ title: 'Usuário bloqueado' });
-        refetchInteractionData();
+      toast({ title: 'Usuário bloqueado' });
+        await refetchInteractionData();
       }
     }
   };
