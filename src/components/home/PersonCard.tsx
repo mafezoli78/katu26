@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -6,6 +7,11 @@ import { useInteractionState, InteractionState } from '@/hooks/useInteractionSta
 import { PersonNearby } from '@/hooks/usePeopleNearby';
 import { NormalizedWave, NormalizedConversation, NormalizedMute, NormalizedBlock } from '@/hooks/useInteractionData';
 import { HandshakeIcon } from '@/components/icons/HandshakeIcon';
+import { VolumeX, Ban } from 'lucide-react';
+
+const BUTTON_WIDTH = 140;
+const DIRECTION_THRESHOLD = 15;
+const SNAP_THRESHOLD = 0.4;
 
 interface PersonCardProps {
   person: PersonNearby;
@@ -16,6 +22,8 @@ interface PersonCardProps {
   activeMutes: NormalizedMute[];
   blocks: NormalizedBlock[];
   onWave: (toUserId: string) => void;
+  openCardId: string | null;
+  onSwipeOpen: (id: string | null) => void;
 }
 
 /**
@@ -34,6 +42,8 @@ export function PersonCard({
   activeMutes,
   blocks,
   onWave,
+  openCardId,
+  onSwipeOpen,
 }: PersonCardProps) {
   const navigate = useNavigate();
   
@@ -48,10 +58,87 @@ export function PersonCard({
     blocks,
   });
 
-  // Card visibility: controlled EXCLUSIVELY by useInteractionState
-  // Only BLOCKED state returns isVisible=false - all other states keep card visible
+  // Swipe state
+  const [translateX, setTranslateX] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const touchRef = useRef<{
+    startX: number;
+    startY: number;
+    directionLocked: 'horizontal' | 'vertical' | null;
+    startTranslateX: number;
+  } | null>(null);
 
-  // Se não deve ser visível (BLOCKED), não renderiza
+  // Close card when another card opens
+  useEffect(() => {
+    if (openCardId !== person.id && translateX !== 0) {
+      setIsAnimating(true);
+      setTranslateX(0);
+    }
+  }, [openCardId, person.id, translateX]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    setIsAnimating(false);
+    touchRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      directionLocked: null,
+      startTranslateX: translateX,
+    };
+  }, [translateX]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const touch = touchRef.current;
+    if (!touch) return;
+
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const deltaX = currentX - touch.startX;
+    const deltaY = currentY - touch.startY;
+
+    // Direction detection
+    if (!touch.directionLocked) {
+      if (Math.abs(deltaX) < DIRECTION_THRESHOLD && Math.abs(deltaY) < DIRECTION_THRESHOLD) {
+        return; // Not enough movement to decide
+      }
+      touch.directionLocked = Math.abs(deltaY) > Math.abs(deltaX) ? 'vertical' : 'horizontal';
+    }
+
+    if (touch.directionLocked === 'vertical') return;
+
+    // Horizontal swipe - prevent scroll
+    e.preventDefault();
+
+    // Notify parent that this card is being swiped
+    if (openCardId !== person.id) {
+      onSwipeOpen(person.id);
+    }
+
+    const newTranslateX = Math.max(-BUTTON_WIDTH, Math.min(0, touch.startTranslateX + deltaX));
+    setTranslateX(newTranslateX);
+  }, [openCardId, person.id, onSwipeOpen]);
+
+  const handleTouchEnd = useCallback(() => {
+    const touch = touchRef.current;
+    if (!touch || touch.directionLocked !== 'horizontal') {
+      touchRef.current = null;
+      return;
+    }
+
+    setIsAnimating(true);
+
+    // Snap logic
+    if (Math.abs(translateX) > BUTTON_WIDTH * SNAP_THRESHOLD) {
+      setTranslateX(-BUTTON_WIDTH);
+      onSwipeOpen(person.id);
+    } else {
+      setTranslateX(0);
+      onSwipeOpen(null);
+    }
+
+    touchRef.current = null;
+  }, [translateX, person.id, onSwipeOpen]);
+
+  // Card visibility: controlled EXCLUSIVELY by useInteractionState
   if (!isVisible) {
     return null;
   }
@@ -77,7 +164,6 @@ export function PersonCard({
         break;
       case 'none':
       default:
-        // Não faz nada
         break;
     }
   };
@@ -100,49 +186,77 @@ export function PersonCard({
     }
   };
 
-  // Determinar se deve animar o ícone
   const shouldAnimateIcon = state === InteractionState.NONE || state === InteractionState.WAVE_RECEIVED;
 
   return (
-    <Card className="border-0 shadow-sm overflow-hidden">
-      <CardContent className="p-4">
-        <div className="flex gap-3">
-          <Avatar className="h-14 w-14 ring-2 ring-background shadow">
-            <AvatarImage src={person.profile.foto_url || undefined} />
-            <AvatarFallback className="bg-katu-blue text-white text-lg font-semibold">
-              {person.profile.nome?.[0]?.toUpperCase() || '?'}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold truncate">
-                {person.profile.nome}
-                {age && <span className="text-muted-foreground font-normal">, {age}</span>}
-              </h3>
-            </div>
-            {/* Exibir assunto_atual OU bio, nunca ambos */}
-            {person.assuntoAtual ? (
-              <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                <span className="font-medium text-foreground">Aqui:</span> {person.assuntoAtual}
-              </p>
-            ) : person.profile.bio ? (
-              <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                <span className="font-medium text-foreground">Sobre mim:</span> {person.profile.bio}
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Botão principal - controlado EXCLUSIVAMENTE pelo hook */}
-        <Button
-          className={`w-full mt-4 h-11 rounded-xl font-semibold ${getButtonStyles()}`}
-          disabled={button.disabled}
-          onClick={handleButtonClick}
+    <div className="relative overflow-hidden rounded-lg">
+      {/* Action buttons behind the card */}
+      <div className="absolute right-0 top-0 bottom-0 flex flex-col w-[140px]">
+        <button
+          className="flex-1 flex flex-col items-center justify-center gap-1 bg-amber-500 text-white active:bg-amber-600"
+          onClick={() => console.log('silenciar', person.id)}
         >
-          <HandshakeIcon className={`h-5 w-5 mr-2 ${shouldAnimateIcon ? 'animate-wave' : ''}`} />
-          {button.label}
-        </Button>
-      </CardContent>
-    </Card>
+          <VolumeX className="h-5 w-5" />
+          <span className="text-xs font-semibold">Silenciar</span>
+        </button>
+        <button
+          className="flex-1 flex flex-col items-center justify-center gap-1 bg-destructive text-destructive-foreground active:bg-destructive/90"
+          onClick={() => console.log('bloquear', person.id)}
+        >
+          <Ban className="h-5 w-5" />
+          <span className="text-xs font-semibold">Bloquear</span>
+        </button>
+      </div>
+
+      {/* Sliding card */}
+      <div
+        style={{
+          transform: `translateX(${translateX}px)`,
+          transition: isAnimating ? 'transform 200ms ease-out' : 'none',
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-4">
+            <div className="flex gap-3">
+              <Avatar className="h-14 w-14 ring-2 ring-background shadow">
+                <AvatarImage src={person.profile.foto_url || undefined} />
+                <AvatarFallback className="bg-katu-blue text-white text-lg font-semibold">
+                  {person.profile.nome?.[0]?.toUpperCase() || '?'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold truncate">
+                    {person.profile.nome}
+                    {age && <span className="text-muted-foreground font-normal">, {age}</span>}
+                  </h3>
+                </div>
+                {person.assuntoAtual ? (
+                  <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
+                    <span className="font-medium text-foreground">Aqui:</span> {person.assuntoAtual}
+                  </p>
+                ) : person.profile.bio ? (
+                  <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
+                    <span className="font-medium text-foreground">Sobre mim:</span> {person.profile.bio}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <Button
+              className={`w-full mt-4 h-11 rounded-xl font-semibold ${getButtonStyles()}`}
+              disabled={button.disabled}
+              onClick={handleButtonClick}
+            >
+              <HandshakeIcon className={`h-5 w-5 mr-2 ${shouldAnimateIcon ? 'animate-wave' : ''}`} />
+              {button.label}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

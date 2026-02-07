@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresence } from '@/hooks/usePresence';
@@ -15,6 +15,7 @@ import { Clock, RefreshCw, LogOut, Store, Users } from 'lucide-react';
 import { TemporaryPlaceIcon } from '@/components/icons/TemporaryPlaceIcon';
 
 export default function Home() {
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -239,6 +240,8 @@ export default function Home() {
                 activeMutes={activeMutes}
                 blocks={blocks}
                 onWave={handleWave}
+                openCardId={openCardId}
+                onSwipeOpen={setOpenCardId}
               />
             ))}
           </div>
