@@ -70,6 +70,17 @@ export function usePeopleNearby(placeId: string | null) {
         const now = Date.now();
         if (now - lastActivity > 60 * 60 * 1000) continue; // Skip expired presences
 
+        // I1/I2 FIX: Check if this user has muted the current user
+        // Uses SECURITY DEFINER function that bypasses RLS
+        const { data: isMutedResult } = await supabase
+          .rpc('is_user_muted', {
+            p_user_id: presence.user_id,
+            p_other_user_id: user.id,
+          });
+
+        // If the other user muted me, skip them (I shouldn't see them)
+        if (isMutedResult === true) continue;
+
         const [profileResult, interestsResult] = await Promise.all([
           supabase
             .from('profiles')
