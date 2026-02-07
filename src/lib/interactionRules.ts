@@ -36,8 +36,12 @@ export enum InteractionState {
  * Derivados dos dados do banco, sem lógica de negócio.
  */
 export interface InteractionFacts {
-  /** Existe bloqueio entre A↔B (qualquer direção) */
+  /** @deprecated Use isBlockedByMe || isBlockedByOther */
   isBlocked: boolean;
+  /** A bloqueou B (eu criei o bloqueio) */
+  isBlockedByMe: boolean;
+  /** B bloqueou A (o outro me bloqueou) */
+  isBlockedByOther: boolean;
   /** A silenciou B E mute não expirou */
   isMutedByA: boolean;
   /** Existe conversa ativa entre A↔B neste place */
@@ -100,14 +104,26 @@ export interface InteractionResult {
  * @returns Estado de interação com configuração de botão
  */
 export function getInteractionState(facts: InteractionFacts): InteractionResult {
-  // 1. BLOQUEIO - prioridade máxima, invisibilidade
-  if (facts.isBlocked) {
+  // 1. BLOQUEIO - prioridade máxima
+  // I3 FIX: Differentiate block direction for visibility
+  if (facts.isBlockedByOther) {
+    // The other user blocked me → I'm invisible to them, card hidden for me
     return {
       state: InteractionState.BLOCKED,
       stateName: 'BLOCKED',
       button: { label: 'Bloqueado', disabled: true, action: 'none' },
       isVisible: false,
       blockReason: 'Usuário bloqueado',
+    };
+  }
+  if (facts.isBlockedByMe) {
+    // I blocked the other user → card stays visible for me (to allow unblock)
+    return {
+      state: InteractionState.BLOCKED,
+      stateName: 'BLOCKED',
+      button: { label: 'Bloqueado', disabled: true, action: 'none' },
+      isVisible: true,
+      blockReason: 'Você bloqueou este usuário',
     };
   }
 
@@ -275,12 +291,14 @@ export function deriveFacts(
   now: Date,
   data: InteractionData
 ): InteractionFacts {
-  // 1. BLOQUEIO - bilateral (qualquer direção)
-  const isBlocked = data.blocks.some(
-    b =>
-      (b.user_id === userA && b.blocked_user_id === userB) ||
-      (b.user_id === userB && b.blocked_user_id === userA)
+  // 1. BLOQUEIO - directional (I3 FIX)
+  const isBlockedByMe = data.blocks.some(
+    b => b.user_id === userA && b.blocked_user_id === userB
   );
+  const isBlockedByOther = data.blocks.some(
+    b => b.user_id === userB && b.blocked_user_id === userA
+  );
+  const isBlocked = isBlockedByMe || isBlockedByOther;
 
   // 2. SILENCIAMENTO - assimétrico (A silenciou B, não expirado)
   const isMutedByA = data.mutes.some(
@@ -327,6 +345,8 @@ export function deriveFacts(
 
   return {
     isBlocked,
+    isBlockedByMe,
+    isBlockedByOther,
     isMutedByA,
     hasActiveChat,
     hasCooldown,
@@ -351,7 +371,7 @@ export function deriveFacts(
  * @returns { allowed: boolean, reason?: string }
  */
 export function canWave(facts: InteractionFacts): { allowed: boolean; reason?: string } {
-  if (facts.isBlocked) {
+  if (facts.isBlockedByMe || facts.isBlockedByOther) {
     return { allowed: false, reason: 'Usuário bloqueado' };
   }
   if (facts.isMutedByA) {
@@ -379,7 +399,7 @@ export function canWave(facts: InteractionFacts): { allowed: boolean; reason?: s
  * @returns { allowed: boolean, reason?: string }
  */
 export function canAcceptWave(facts: InteractionFacts): { allowed: boolean; reason?: string } {
-  if (facts.isBlocked) {
+  if (facts.isBlockedByMe || facts.isBlockedByOther) {
     return { allowed: false, reason: 'Usuário bloqueado' };
   }
   if (facts.isMutedByA) {
