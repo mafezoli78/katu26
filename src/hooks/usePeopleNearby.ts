@@ -126,6 +126,25 @@ export function usePeopleNearby(placeId: string | null) {
     return () => clearInterval(interval);
   }, [user, placeId]);
 
+  // Realtime subscription for user_mutes
+  // When A mutes/unmutes B, B receives the event (bilateral RLS) and refetches
+  useEffect(() => {
+    if (!user?.id || !placeId) return;
+
+    const channel = supabase
+      .channel(`people-mutes-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'user_mutes',
+      }, () => {
+        fetchPeopleNearby();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, placeId]);
+
   return {
     people,
     loading,
