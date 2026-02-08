@@ -2,13 +2,14 @@ import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInteractionState, InteractionState } from '@/hooks/useInteractionState';
 import { useAuth } from '@/contexts/AuthContext';
 import { PersonNearby } from '@/hooks/usePeopleNearby';
 import { NormalizedWave, NormalizedConversation, NormalizedMute, NormalizedBlock } from '@/hooks/useInteractionData';
 import { HandshakeIcon } from '@/components/icons/HandshakeIcon';
 import { SwipeActions } from '@/components/home/SwipeActions';
+import { calculateAge } from '@/utils/date';
 
 const BUTTON_WIDTH = 140;
 const DIRECTION_THRESHOLD = 15;
@@ -29,13 +30,6 @@ interface PersonCardProps {
   onSwipeOpen: (id: string | null) => void;
 }
 
-/**
- * Card de pessoa na lista da Home.
- * 
- * Usa useInteractionState como ÚNICA fonte de verdade para:
- * - Visibilidade do card
- * - Label, estado e ação do botão principal
- */
 export function PersonCard({
   person,
   placeId,
@@ -52,9 +46,9 @@ export function PersonCard({
 }: PersonCardProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  
-  // Hook de estado - ÚNICA fonte de verdade
-  const { state, stateName, button, isVisible } = useInteractionState({
+  const [photoOpen, setPhotoOpen] = useState(false);
+
+  const { state, button, isVisible } = useInteractionState({
     otherUserId: person.id,
     placeId,
     sentWaves,
@@ -64,7 +58,6 @@ export function PersonCard({
     blocks,
   });
 
-  // Derive mute/block states for swipe buttons
   const isMutedByMe = activeMutes.some(
     m => m.user_id === user?.id && m.muted_user_id === person.id
   );
@@ -82,7 +75,6 @@ export function PersonCard({
     startTranslateX: number;
   } | null>(null);
 
-  // Close card when another card opens
   useEffect(() => {
     if (openCardId !== person.id && translateX !== 0) {
       setIsAnimating(true);
@@ -109,20 +101,17 @@ export function PersonCard({
     const deltaX = currentX - touch.startX;
     const deltaY = currentY - touch.startY;
 
-    // Direction detection
     if (!touch.directionLocked) {
       if (Math.abs(deltaX) < DIRECTION_THRESHOLD && Math.abs(deltaY) < DIRECTION_THRESHOLD) {
-        return; // Not enough movement to decide
+        return;
       }
       touch.directionLocked = Math.abs(deltaY) > Math.abs(deltaX) ? 'vertical' : 'horizontal';
     }
 
     if (touch.directionLocked === 'vertical') return;
 
-    // Horizontal swipe - prevent scroll
     e.preventDefault();
 
-    // Notify parent that this card is being swiped
     if (openCardId !== person.id) {
       onSwipeOpen(person.id);
     }
@@ -140,7 +129,6 @@ export function PersonCard({
 
     setIsAnimating(true);
 
-    // Snap logic
     if (Math.abs(translateX) > BUTTON_WIDTH * SNAP_THRESHOLD) {
       setTranslateX(-BUTTON_WIDTH);
       onSwipeOpen(person.id);
@@ -152,17 +140,16 @@ export function PersonCard({
     touchRef.current = null;
   }, [translateX, person.id, onSwipeOpen]);
 
-  // Card visibility: controlled EXCLUSIVELY by useInteractionState
   if (!isVisible) {
     return null;
   }
 
-  // Calcular idade
-  const age = person.profile.data_nascimento 
-    ? new Date().getFullYear() - new Date(person.profile.data_nascimento).getFullYear()
+  const age = person.profile.data_nascimento
+    ? calculateAge(person.profile.data_nascimento)
     : null;
 
-  // Handler do botão principal
+  const initials = person.profile.nome?.[0]?.toUpperCase() || '?';
+
   const handleButtonClick = () => {
     switch (button.action) {
       case 'wave':
@@ -182,7 +169,6 @@ export function PersonCard({
     }
   };
 
-  // Determinar estilos do botão baseado no estado
   const getButtonStyles = () => {
     switch (state) {
       case InteractionState.NONE:
@@ -202,9 +188,19 @@ export function PersonCard({
 
   const shouldAnimateIcon = state === InteractionState.NONE || state === InteractionState.WAVE_RECEIVED;
 
+  const ctaButton = (
+    <Button
+      className={`w-full h-11 rounded-xl font-semibold ${getButtonStyles()}`}
+      disabled={button.disabled}
+      onClick={handleButtonClick}
+    >
+      <HandshakeIcon className={`h-5 w-5 mr-2 ${shouldAnimateIcon ? 'animate-wave' : ''}`} />
+      {button.label}
+    </Button>
+  );
+
   return (
     <div className="relative overflow-hidden rounded-lg">
-      {/* Action buttons behind the card */}
       <SwipeActions
         personId={person.id}
         isMuted={isMutedByMe}
@@ -223,7 +219,6 @@ export function PersonCard({
         }}
       />
 
-      {/* Sliding card */}
       <div
         style={{
           transform: `translateX(${translateX}px)`,
@@ -234,44 +229,70 @@ export function PersonCard({
         onTouchEnd={handleTouchEnd}
       >
         <Card className="border-0 shadow-sm overflow-hidden">
-          <CardContent className="p-4">
-            <div className="flex gap-3">
-              <Avatar className="h-14 w-14 ring-2 ring-background shadow">
-                <AvatarImage src={person.profile.foto_url || undefined} />
-                <AvatarFallback className="bg-katu-blue text-white text-lg font-semibold">
-                  {person.profile.nome?.[0]?.toUpperCase() || '?'}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold truncate">
+          <CardContent className="p-0">
+            <div className="flex h-full">
+              {/* FOTO */}
+              <div
+                className="w-[33%] min-h-[120px] relative overflow-hidden rounded-l-lg cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (person.profile.foto_url) setPhotoOpen(true);
+                }}
+              >
+                {person.profile.foto_url ? (
+                  <img
+                    src={person.profile.foto_url}
+                    alt={person.profile.nome || ''}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center font-bold text-xl bg-muted text-muted-foreground">
+                    {initials}
+                  </div>
+                )}
+              </div>
+
+              {/* CONTEÚDO */}
+              <div className="flex-1 flex flex-col justify-between p-4">
+                <div>
+                  <div className="font-semibold text-base">
                     {person.profile.nome}
-                    {age && <span className="text-muted-foreground font-normal">, {age}</span>}
-                  </h3>
+                    {age !== null && <span className="text-muted-foreground font-normal">, {age}</span>}
+                  </div>
+
+                  {person.assuntoAtual ? (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                      <span className="font-medium text-foreground">Aqui:</span> {person.assuntoAtual}
+                    </p>
+                  ) : person.profile.bio ? (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                      <span className="font-medium text-foreground">Sobre mim:</span> {person.profile.bio}
+                    </p>
+                  ) : null}
                 </div>
-                {person.assuntoAtual ? (
-                  <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                    <span className="font-medium text-foreground">Aqui:</span> {person.assuntoAtual}
-                  </p>
-                ) : person.profile.bio ? (
-                  <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                    <span className="font-medium text-foreground">Sobre mim:</span> {person.profile.bio}
-                  </p>
-                ) : null}
+
+                <div className="mt-3">
+                  {ctaButton}
+                </div>
               </div>
             </div>
-
-            <Button
-              className={`w-full mt-4 h-11 rounded-xl font-semibold ${getButtonStyles()}`}
-              disabled={button.disabled}
-              onClick={handleButtonClick}
-            >
-              <HandshakeIcon className={`h-5 w-5 mr-2 ${shouldAnimateIcon ? 'animate-wave' : ''}`} />
-              {button.label}
-            </Button>
           </CardContent>
         </Card>
       </div>
+
+      {/* Modal de ampliação da foto */}
+      <Dialog open={photoOpen} onOpenChange={setPhotoOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogTitle className="sr-only">Foto ampliada</DialogTitle>
+          {person.profile.foto_url && (
+            <img
+              src={person.profile.foto_url}
+              alt={person.profile.nome || ''}
+              className="w-full max-h-[70vh] object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
