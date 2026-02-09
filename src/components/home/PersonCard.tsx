@@ -256,7 +256,7 @@ export function PersonCard({
               <div className="flex-1 flex flex-col justify-between p-4">
                 <div>
                   <div className="font-semibold text-base">
-                    {person.profile.nome}
+                    {person.profile.nome?.split(' ')[0] || person.profile.nome}
                     {age !== null && <span className="text-muted-foreground font-normal">, {age}</span>}
                   </div>
 
