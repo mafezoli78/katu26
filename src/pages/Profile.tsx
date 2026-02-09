@@ -190,13 +190,20 @@ export default function Profile() {
           <CardContent className="relative pt-0 pb-6">
             {/* Avatar */}
             <div className="flex justify-center -mt-12 mb-4">
-              <div className="relative">
-                <Avatar className="h-24 w-24 ring-4 ring-card shadow-lg">
-                  <AvatarImage src={profile?.foto_url || undefined} />
-                  <AvatarFallback className="bg-katu-blue text-white text-2xl font-bold">
-                    {profile?.nome?.[0]?.toUpperCase() || '?'}
-                  </AvatarFallback>
-                </Avatar>
+              <div className="relative inline-block">
+                <div className="h-24 w-24 rounded-lg ring-4 ring-card shadow-lg overflow-hidden bg-katu-blue">
+                  {profile?.foto_url ? (
+                    <img
+                      src={profile.foto_url}
+                      alt={profile.nome || ''}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-white text-2xl font-bold">
+                      {profile?.nome?.[0]?.toUpperCase() || '?'}
+                    </div>
+                  )}
+                </div>
                 <label className="absolute bottom-0 right-0 bg-accent text-accent-foreground rounded-full p-2 cursor-pointer hover:bg-accent/90 shadow-lg transition-transform hover:scale-105">
                   <Camera className="h-4 w-4" />
                   <input 
