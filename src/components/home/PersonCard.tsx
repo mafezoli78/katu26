@@ -233,7 +233,7 @@ export function PersonCard({
             <div className="flex h-full">
               {/* FOTO */}
               <div
-                className="w-[33%] min-h-[120px] relative overflow-hidden rounded-l-lg cursor-pointer"
+                className="w-[33%] flex items-center p-3 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (person.profile.foto_url) setPhotoOpen(true);
@@ -243,10 +243,10 @@ export function PersonCard({
                   <img
                     src={person.profile.foto_url}
                     alt={person.profile.nome || ''}
-                    className="absolute inset-0 h-full w-full object-cover"
+                    className="w-full aspect-square object-cover rounded-lg"
                   />
                 ) : (
-                  <div className="h-full w-full flex items-center justify-center font-bold text-xl bg-muted text-muted-foreground">
+                  <div className="w-full aspect-square flex items-center justify-center font-bold text-xl bg-muted text-muted-foreground rounded-lg">
                     {initials}
                   </div>
                 )}
@@ -288,7 +288,7 @@ export function PersonCard({
             <img
               src={person.profile.foto_url}
               alt={person.profile.nome || ''}
-              className="w-full max-h-[70vh] object-contain"
+              className="w-full max-w-md mx-auto aspect-square object-cover rounded-lg"
             />
           )}
         </DialogContent>
