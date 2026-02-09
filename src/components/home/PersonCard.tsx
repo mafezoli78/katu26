@@ -233,7 +233,7 @@ export function PersonCard({
             <div className="flex h-full">
               {/* FOTO */}
               <div
-                className="w-[38%] flex items-center p-2.5 cursor-pointer"
+                className="w-[36%] flex items-center p-2.5 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (person.profile.foto_url) setPhotoOpen(true);
