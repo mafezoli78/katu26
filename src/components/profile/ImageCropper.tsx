@@ -121,14 +121,14 @@ export function ImageCropper({ open, onClose, imageSrc, onCropComplete }: ImageC
           <DialogTitle>Ajustar foto</DialogTitle>
         </DialogHeader>
         
-        <div className="relative w-full h-72 bg-black">
+        <div className="relative w-full h-72 bg-black [&_.reactEasyCrop_CropArea]:!rounded-lg">
           <Cropper
             image={imageSrc}
             crop={crop}
             zoom={zoom}
             rotation={rotation}
             aspect={1}
-            cropShape="round"
+            cropShape="rect"
             showGrid={false}
             onCropChange={onCropChange}
             onZoomChange={onZoomChange}
