@@ -184,7 +184,6 @@ export default function Waves() {
     
     toast({
       title: 'Aceno ignorado',
-      description: 'Você pode receber outros acenos desta pessoa'
     });
   };
 

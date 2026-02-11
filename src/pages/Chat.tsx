@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useChat } from '@/hooks/useChat';
@@ -51,32 +51,33 @@ export default function Chat() {
     }
   }, [conversationIdParam, activeConversations, chatState.isActive, openChat, setSearchParams]);
 
-  // R3: Show toast when chat ends with correct feedback message
-  // IMPORTANT: Don't show toast for system_suspended (recoverable) states
+  // R3: Show toast when chat ends - transition guard prevents duplicates
+  // Only fires on transition from NOT ended → ended (ref tracks previous state)
+  const previousEndedRef = useRef<string | null>(null);
+  
   useEffect(() => {
-    if (chatState.endedReason && chatState.endedReason !== 'system_suspended') {
-      // R3: Differentiate messages based on who ended and why
-      const messages = {
-        manual_self: 'Conversa encerrada por você',
-        manual_other: 'A outra pessoa encerrou a conversa',
-        presence_end: 'Conversa encerrada (saída do local)',
-      };
-      
-      // Determine which message to show
-      // If we ended it manually, chatState.endedBy would be our user id
-      let messageKey: keyof typeof messages = 'presence_end';
-      if (chatState.endedReason === 'manual') {
-        messageKey = chatState.wasEndedByMe ? 'manual_self' : 'manual_other';
-      }
+    const currentReason = chatState.endedReason;
+    
+    // Only show toast on real transition: previous was null, current is a terminal reason
+    if (previousEndedRef.current === null && currentReason && currentReason !== 'system_suspended') {
+      const message = chatState.wasEndedByMe
+        ? 'Conversa encerrada por você'
+        : 'A outra pessoa encerrou a conversa';
       
       toast({
-        title: messages[messageKey],
+        title: message,
         description: 'As mensagens foram apagadas',
       });
-      
-      clearEndedReason();
     }
-  }, [chatState.endedReason, chatState.wasEndedByMe, clearEndedReason]);
+    
+    // Always sync ref to current value (prevents re-fire on Realtime re-set)
+    previousEndedRef.current = currentReason;
+    
+    // Reset ref when reason is cleared (prepares for next conversation)
+    if (currentReason === null) {
+      previousEndedRef.current = null;
+    }
+  }, [chatState.endedReason, chatState.wasEndedByMe]);
 
   const handleEndChat = async () => {
     const { error } = await endChat('manual');
