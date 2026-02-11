@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
 import { useToast } from '@/hooks/use-toast';
 import { Camera, X, Check } from 'lucide-react';
 import logoKatu from '@/assets/logo-katu-branco.png';
@@ -174,12 +174,15 @@ export default function Onboarding() {
               {/* Avatar upload */}
               <div className="flex justify-center">
                 <div className="relative">
-                  <Avatar className="h-24 w-24">
-                    <AvatarImage src={avatarPreview || undefined} />
-                    <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
-                      {nome ? nome[0].toUpperCase() : '?'}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="h-24 w-24 rounded-lg overflow-hidden bg-primary flex items-center justify-center">
+                    {avatarPreview ? (
+                      <img src={avatarPreview} alt="Avatar" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-primary-foreground text-2xl font-semibold">
+                        {nome ? nome[0].toUpperCase() : '?'}
+                      </span>
+                    )}
+                  </div>
                   <label className="absolute bottom-0 right-0 bg-accent text-accent-foreground rounded-full p-2 cursor-pointer hover:bg-accent/90 transition-colors">
                     <Camera className="h-4 w-4" />
                     <input
@@ -305,12 +308,15 @@ export default function Onboarding() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
-                <Avatar className="h-16 w-16">
-                  <AvatarImage src={avatarPreview || undefined} />
-                  <AvatarFallback className="bg-primary text-primary-foreground text-xl">
-                    {nome[0].toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="h-16 w-16 rounded-lg overflow-hidden bg-primary flex items-center justify-center shrink-0">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Avatar" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-primary-foreground text-xl font-semibold">
+                      {nome[0].toUpperCase()}
+                    </span>
+                  )}
+                </div>
                 <div>
                   <h3 className="font-semibold text-lg">{nome}</h3>
                   {bio && <p className="text-sm text-muted-foreground">{bio}</p>}

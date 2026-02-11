@@ -137,6 +137,20 @@ export function useConversations() {
             return;
           }
           
+          // A1 FIX: Suppress Realtime toast for the user who accepted the wave.
+          // When a wave is accepted, the acceptor (user2_id) already sees a local
+          // "Chat iniciado!" toast from Waves.tsx. Showing the Realtime toast too
+          // would be a duplicate. We only show the Realtime toast for the OTHER user
+          // (the wave sender, user1_id) who wouldn't otherwise know.
+          // NOTE: This assumption is valid as long as the accept flow is unidirectional
+          // (only para_user_id can accept, and they become user2_id in the conversation).
+          if (newConv.user2_id === user.id) {
+            console.log('[useConversations] Suppressing Realtime toast for acceptor (user2_id)');
+            knownConversationIds.current.add(newConv.id);
+            fetchConversations();
+            return;
+          }
+
           console.log('[useConversations] New conversation detected:', newConv.id);
           
           // Add to known IDs immediately to prevent duplicates

@@ -160,7 +160,7 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
         state: InteractionState.ENDED_BY_ME,
         stateName: 'ENDED_BY_ME',
         button: {
-          label: 'Interação encerrada',
+          label: 'Conversa encerrada',
           disabled: true,
           action: 'none',
           conversationId: facts.conversationId,
@@ -173,7 +173,7 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
         state: InteractionState.ENDED_BY_OTHER,
         stateName: 'ENDED_BY_OTHER',
         button: {
-          label: 'Interação indisponível',
+          label: 'Indisponível',
           disabled: true,
           action: 'none',
           conversationId: facts.conversationId,
