@@ -85,6 +85,8 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
   const fetchIdRef = useRef(0);
   const userIdRef = useRef<string | undefined>(undefined);
   const placeIdRef = useRef<string | null>(null);
+  // Track wave IDs that already triggered the ignore cooldown toast (prevents duplicates)
+  const toastedIgnoreCooldownWaveIds = useRef<Set<string>>(new Set());
   
   // Atualizar refs quando valores mudam
   useEffect(() => {
@@ -304,8 +306,9 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
               record?.de_user_id === user.id &&
               record?.ignore_cooldown_until &&
               new Date(record.ignore_cooldown_until) > new Date() &&
-              oldRecord?.status === 'pending' // só na transição real
+              !toastedIgnoreCooldownWaveIds.current.has(record.id)
             ) {
+              toastedIgnoreCooldownWaveIds.current.add(record.id);
               toast({
                 title: 'A pessoa está indisponível no momento',
                 description: 'Tente novamente mais tarde.',
