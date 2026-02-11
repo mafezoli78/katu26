@@ -5,7 +5,7 @@ import { useWaves, Wave } from '@/hooks/useWaves';
 import { useConversations } from '@/hooks/useConversations';
 import { MobileLayout } from '@/components/layout/MobileLayout';
 import { Card, CardContent } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -161,7 +161,7 @@ export default function Waves() {
       addConversation(conversation);
       
       toast({
-        title: 'Conexão criada! 🎉',
+        title: 'Chat iniciado! 🎉',
         description: `Você agora pode conversar com ${wave.profile.nome || 'esta pessoa'}`,
         action: (
           <ToastAction 
@@ -259,12 +259,15 @@ export default function Waves() {
                     >
                       <CardContent className="p-4">
                         <div className="flex items-center gap-3 mb-3">
-                          <Avatar className="h-12 w-12 ring-2 ring-background shadow">
-                            <AvatarImage src={wave.profile.foto_url || undefined} />
-                            <AvatarFallback className="bg-katu-blue text-white font-semibold">
-                              {wave.profile.nome?.[0]?.toUpperCase() || '?'}
-                            </AvatarFallback>
-                          </Avatar>
+                          <div className="h-12 w-12 rounded-lg overflow-hidden ring-2 ring-background shadow bg-katu-blue flex items-center justify-center shrink-0">
+                            {wave.profile.foto_url ? (
+                              <img src={wave.profile.foto_url} alt={wave.profile.nome || ''} className="h-full w-full object-cover" />
+                            ) : (
+                              <span className="text-white font-semibold">
+                                {wave.profile.nome?.[0]?.toUpperCase() || '?'}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex-1">
                             <p className="font-semibold">Alguém acenou para você! 👋</p>
                             <p className="text-sm text-muted-foreground">
@@ -345,12 +348,15 @@ export default function Waves() {
                   return (
                     <Card key={wave.id} className="border-0 shadow-sm">
                       <CardContent className="p-4 flex items-center gap-3">
-                        <Avatar className="h-12 w-12 ring-2 ring-background shadow">
-                          <AvatarImage src={wave.profile.foto_url || undefined} />
-                          <AvatarFallback className="bg-katu-blue text-white font-semibold">
-                            {wave.profile.nome?.[0]?.toUpperCase() || '?'}
-                          </AvatarFallback>
-                        </Avatar>
+                        <div className="h-12 w-12 rounded-lg overflow-hidden ring-2 ring-background shadow bg-katu-blue flex items-center justify-center shrink-0">
+                          {wave.profile.foto_url ? (
+                            <img src={wave.profile.foto_url} alt={wave.profile.nome || ''} className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="text-white font-semibold">
+                              {wave.profile.nome?.[0]?.toUpperCase() || '?'}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex-1">
                           <p className="font-semibold">Você acenou para {wave.profile.nome}</p>
                           <p className="text-sm text-muted-foreground">

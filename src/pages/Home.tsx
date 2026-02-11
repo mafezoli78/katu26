@@ -50,14 +50,25 @@ export default function Home() {
     }
   }, [user, navigate]);
 
-  // Handle presence end - refetch waves and clear reason without showing toast
+  // A3: Handle presence end - show toast for automatic endings, refetch data
   useEffect(() => {
     if (lastEndReason) {
       refetchWaves();
       refetchInteractionData();
+      
+      // Show toast only for non-manual endings (automatic/system-initiated)
+      // Manual exits (user clicked "Sair") are intentional — silence is valid
+      const reasonType = lastEndReason.type;
+      if (reasonType === 'presence_expired' || reasonType === 'expired') {
+        toast({ title: 'Presença expirada', description: 'Seu tempo no local terminou' });
+      } else if (reasonType === 'gps_exit') {
+        toast({ title: 'Você saiu da área', description: 'Presença encerrada automaticamente' });
+      }
+      // 'manual' / 'user_left_location': silence (explicit user action)
+      
       clearLastEndReason();
     }
-  }, [lastEndReason, clearLastEndReason, refetchWaves, refetchInteractionData]);
+  }, [lastEndReason, clearLastEndReason, refetchWaves, refetchInteractionData, toast]);
 
   const handleWave = async (toUserId: string) => {
     if (!currentPlace) return;
@@ -253,7 +264,12 @@ export default function Home() {
               <Button 
                 size="sm" 
                 variant="secondary"
-                onClick={renewPresence}
+                onClick={async () => {
+                  const { error } = await renewPresence();
+                  if (!error) {
+                    toast({ title: 'Presença renovada', description: 'Mais 60 minutos neste local' });
+                  }
+                }}
                 className="flex-1 h-9 rounded-lg bg-white/20 hover:bg-white/30 text-white border-0"
               >
                 <RefreshCw className="h-4 w-4 mr-1.5" />
