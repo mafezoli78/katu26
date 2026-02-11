@@ -8,6 +8,17 @@ import { useInteractionData } from '@/hooks/useInteractionData';
 import { MobileLayout } from '@/components/layout/MobileLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { PersonCard } from '@/components/home/PersonCard';
@@ -275,15 +286,35 @@ export default function Home() {
                 <RefreshCw className="h-4 w-4 mr-1.5" />
                 Renovar
               </Button>
-              <Button 
-                size="sm" 
-                variant="outline"
-                onClick={deactivatePresence}
-                className="flex-1 h-9 rounded-lg bg-transparent border-white/30 text-white hover:bg-white/10"
-              >
-                <LogOut className="h-4 w-4 mr-1.5" />
-                Sair
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="flex-1 h-9 rounded-lg bg-transparent border-white/30 text-white hover:bg-white/10"
+                  >
+                    <LogOut className="h-4 w-4 mr-1.5" />
+                    Sair
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Sair do local?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Ao sair, suas conversas e acenos deste local serão apagados permanentemente.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Ficar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={deactivatePresence}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Sair do local
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </CardContent>
         </Card>
