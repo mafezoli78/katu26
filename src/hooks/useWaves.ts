@@ -421,17 +421,20 @@ export function useWaves() {
   };
 
   const ignoreWave = async (waveId: string) => {
-    // Simply remove from local state - no database action needed
-    // The wave will naturally expire or be cleaned up when presence ends
+    // Optimistically remove from local state
     setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
-    
-    // Mark as visualized so it doesn't count as unread
-    await supabase
+    setUnreadCount(prev => Math.max(0, prev - 1));
+
+    // Persist: set status to 'expired' so both users return to NONE
+    // This ensures deriveFacts no longer sees a pending wave
+    const { error } = await supabase
       .from('waves')
-      .update({ visualizado: true })
+      .update({ status: 'expired', visualizado: true })
       .eq('id', waveId);
 
-    setUnreadCount(prev => Math.max(0, prev - 1));
+    if (error) {
+      console.error('[useWaves] Error ignoring wave:', error);
+    }
   };
 
   const markAsRead = async (waveId: string) => {
