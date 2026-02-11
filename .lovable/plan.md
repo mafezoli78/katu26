@@ -1,200 +1,193 @@
-# Plan: Fix Chat Ending Duplicate Toast and Wave Ignore State (Revised and Hardened)
+# Plan: Cooldown de 2 horas ao ignorar aceno
 
-## Bug 1 -- Duplicate Toast on Chat End + Missing Toast for Other User
+## Estrategia
 
-### Root Cause
+Adicionar duas colunas na tabela `waves`, atualizar a funcao `ignoreWave` para gravar o cooldown, expandir a query de dados para incluir waves ignoradas com cooldown ativo, adicionar um novo fato booleano e estado na maquina canonica, e disparar toast Realtime para o remetente.
 
-When user A ends a chat:
+---
 
-1. endChat('manual') in useChat.ts updates the DB and immediately sets chatState.endedReason = 'manual' and chatState.wasEndedByMe = true
-2. Chat.tsx has a useEffect that listens to endedReason and shows a toast
-3. Supabase Realtime emits an UPDATE event for the same conversation
-4. The Realtime handler sets chatState again with the same values
-5. The useEffect runs again, producing a second toast
+## 1. Migracao de banco de dados
 
-For user B:
-- The Realtime handler sets endedReason = 'manual' and wasEndedByMe = false
-- However, the toast effect may not run reliably if clearEndedReason() was triggered too early or the effect does not detect a proper state transition
-- Result: sometimes no toast appears for user B
+Adicionar duas colunas na tabela `waves`:
 
-### Correct Fix (Do NOT Skip State Sync)
+```sql
+ALTER TABLE waves
+  ADD COLUMN ignored_at timestamptz,
+  ADD COLUMN ignore_cooldown_until timestamptz;
+```
 
-Do NOT skip updating state in Realtime when updated.encerrado_por === user.id
+Sem alterar constraints, status values, ou RLS.
 
-Skipping state sync introduces divergence after reload or remount.
+---
 
-Instead, prevent duplicate toasts by ensuring the toast effect only fires on a real state transition.
+## 2. useWaves.ts -- Gravar cooldown ao ignorar
 
-### Implementation
+Na funcao `ignoreWave`, adicionar os dois campos no update:
 
-File: src/hooks/useChat.ts
+```text
+update({
+  status: 'expired',
+  visualizado: true,
+  ignored_at: new Date().toISOString(),
+  ignore_cooldown_until: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+})
+```
 
-- Keep the Realtime UPDATE handler always syncing DB to state
-- Always update endedReason and wasEndedByMe based on DB
-- Ensure the assignment is idempotent and reflects DB truth
-- Do not add conditional skip based on updated.encerrado_por === user.id
+---
 
-File: src/pages/Chat.tsx
+## 3. useInteractionData.ts -- Buscar waves ignoradas com cooldown ativo
 
-Modify the toast useEffect so it fires only on transition from NOT ended to ended.
+Problema: a query atual so busca waves com `status === 'pending'`. Waves ignoradas (status `expired`) com cooldown ativo nao chegam ao frontend.
 
-Implementation logic:
+Na query atual que já busca waves, você deve:
 
-1. Create a ref, for example previousEndedRef
-2. In useEffect:
-   - If previousEndedRef.current is null
-   - AND chatState.endedReason === 'manual'
-   - THEN show toast
-3. After evaluation, update previousEndedRef.current with chatState.endedReason
+🔁 TROCAR
 
-Toast rules:
-- If wasEndedByMe === true → show "Conversa encerrada por você"
-- If wasEndedByMe === false → show "Conversa encerrada pela outra pessoa"
+Se hoje está assim: .eq('status', 'pending')
 
-This guarantees:
-- User who ends sees exactly one toast
-- Other user sees exactly one toast
-- Reload does not retrigger toast
-- Realtime keeps state consistent
+Troque por: .in('status', ['pending', 'expired'])
 
-Risk: Low
-- No removal of logic
-- No sync skipped
-- No impact on presence, visibility, block, mute or cooldown
-- Fix isolated to UI side effects
+Só isso.
 
-------------------------------------------------------------------
+Não criar nova query.
 
-## Bug 2 -- Ignore Wave Does Not Update Persistent State
+Não criar novo campo retornado.
 
-### Root Cause
+Não duplicar fonte de dados
 
-ignoreWave only:
-- Removes wave from local UI state
-- Updates visualizado: true in DB
+---
 
-It does NOT change status from 'pending'
+## 4. interactionRules.ts -- Novo estado UNAVAILABLE_TEMP
 
-Consequences:
-- deriveFacts still detects status === 'pending'
-- Button remains "Responder aceno"
-- Sender remains "Aceno enviado"
-- Any refetch or Realtime restores previous UI state
+### 4a. Enum
 
-This is a persistence bug, not a UI bug.
+Adicionar entre WAVE_SENT e WAVE_RECEIVED (ou apos WAVE_SENT):
 
-### Domain Decision
+```text
+UNAVAILABLE_TEMP = 8
+```
 
-Reuse existing allowed status 'expired'
+&nbsp;
 
-Allowed by constraint:
-- 'pending'
-- 'accepted'
-- 'expired'
+### 4b. InteractionFacts
 
-Decision:
-'expired' represents a terminal non-accepted wave (timeout or manual ignore)
+Adicionar:
 
-No new status
-No migration
+```text
+hasIgnoreCooldownFromB: boolean  // B ignorou meu aceno e cooldown esta ativo
+```
 
-### Implementation
+### 4c. getInteractionState
 
-File: src/hooks/useWaves.ts
+Inserir o check de hasIgnoreCooldownFromB imediatamente após os checks de block, mute e conversation, e antes de qualquer lógica de WAVE_SENT, WAVE_RECEIVED ou NONE.
 
-Rewrite ignoreWave:
+```text
+if (facts.hasIgnoreCooldownFromB) {
+  return {
+    state: InteractionState.UNAVAILABLE_TEMP,
+    stateName: 'UNAVAILABLE_TEMP',
+    button: { label: 'Indisponivel no momento', disabled: true, action: 'none' },
+    isVisible: true,
+    blockReason: 'Aguarde para enviar novo aceno',
+  };
+}
+```
 
-1. Optimistically remove from local state
-2. Decrease unread counter
-3. Update DB with:
-   - status: 'expired'
-   - visualizado: true
-4. Log error if update fails
-5. Do not rely only on local filtering
+### 4d. deriveFacts
 
-DB must remain source of truth.
+Adicionar novo parametro ou expandir `WaveRecord` para incluir `ignore_cooldown_until`. Calcular:
 
-### Realtime Propagation
+```text
+const hasIgnoreCooldownFromB = data.waves.some(
+  w => w.place_id === placeId
+    && w.status === 'expired'
+    && w.de_user_id === userA        // EU enviei
+    && w.para_user_id === userB      // para B
+    && w.ignore_cooldown_until
+    && new Date(w.ignore_cooldown_until) > now
+);
+```
 
-Because useInteractionData subscribes to waves:
+### 4e. canWave
 
-When status changes:
-- User B sees immediate local update
-- User A receives Realtime UPDATE
-- Refetch removes wave from pending
-- Both return to InteractionState.NONE
+Adicionar validacao:
 
-No manual refresh required.
+```text
+if (facts.hasIgnoreCooldownFromB) {
+  return { allowed: false, reason: 'Aguarde para enviar novo aceno' };
+}
+```
 
-File: src/pages/Waves.tsx
+### 4f. Helpers
 
-Adjust toast text.
+Atualizar `getStateName` e `isActionable` para o novo estado.
 
-Title:
-"Aceno ignorado"
+---
 
-No misleading description.
+## 5. useInteractionState.ts -- Passar dados expandidos
 
-------------------------------------------------------------------
+Incluir as waves ignoradas com cooldown nos dados passados para `deriveFacts`, combinando-as com as demais waves.
 
-## Validation Checklist (Mandatory)
+---
 
-- Confirm RLS allows para_user_id to UPDATE waves
-- Confirm no UNIQUE constraint blocks re-wave after ignore
-- Confirm deriveFacts only treats status === 'pending' as active
-- Confirm accepted waves remain unaffected
+## 6. Toast Realtime para o remetente (User A)
 
-------------------------------------------------------------------
+No handler Realtime de waves em `useInteractionData.ts` (linha 282), quando receber UPDATE:
 
-## Files to Change
+```text
+if (
+  payload.eventType === 'UPDATE'
+  && record?.status === 'expired'
+  && record?.de_user_id === user.id           // EU sou o remetente
+  && record?.ignore_cooldown_until             // tem cooldown
+  && new Date(record.ignore_cooldown_until) > new Date()
+) {
+  toast({
+    title: 'A pessoa esta indisponivel no momento',
+    description: 'Tente novamente mais tarde.'
+  });
+}
+```
 
-src/pages/Chat.tsx
-- Add transition-based toast guard using previous state ref
+Isso garante que A receba o toast via Realtime quando B ignora.
 
-src/hooks/useChat.ts
-- Keep full state sync in Realtime without skip logic
+Garantir que o toast só dispare quando houver transição real para status 'expired'.
 
-src/hooks/useWaves.ts
-- Update ignoreWave to set status: 'expired'
+Não deve disparar novamente se o registro já estiver expirado anteriormente.
 
-src/pages/Waves.tsx
-- Adjust ignore toast text
+---
 
-------------------------------------------------------------------
+## Arquivos impactados
 
-## Execution Order
 
-1. useWaves.ts
-2. Waves.tsx
-3. Chat.tsx
-4. useChat.ts verification
+| Arquivo                            | Mudanca                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| Migracao SQL                       | ADD COLUMN ignored_at, ignore_cooldown_until                                |
+| `src/hooks/useWaves.ts`            | Gravar cooldown no ignoreWave                                               |
+| `src/hooks/useInteractionData.ts`  | Nova query + toast Realtime + novo campo retornado                          |
+| `src/lib/interactionRules.ts`      | Novo estado, novo fato, novo check em getInteractionState, canWave, helpers |
+| `src/hooks/useInteractionState.ts` | Passar waves expandidas para deriveFacts                                    |
 
-------------------------------------------------------------------
 
-## No Backend Structural Changes
+---
 
-- No migration
-- No new status
-- No constraint changes
-- No Edge Function updates
-- No RLS changes expected (verify only)
+## Ordem de execucao
 
-------------------------------------------------------------------
+```text
+1. Migracao (add columns)
+2. useWaves.ts (gravar cooldown)
+3. interactionRules.ts (novo estado + fato + validacao)
+4. useInteractionData.ts (query expandida + toast Realtime)
+5. useInteractionState.ts (passar dados expandidos)
+```
 
-## Regression Risk: Low
+---
 
-Bug 1:
-- Duplicate prevention handled at UI transition layer
-- Eliminates race condition without breaking sync
+## Risco de regressao: Baixo
 
-Bug 2:
-- Converts visual-only action into real persistent mutation
-- Reuses existing allowed status
-- Compatible with current deriveFacts logic
-
-No impact on:
-- Presence
-- Visibility in location
-- Blocks
-- Mutes
-- Conversations table
+- Nao altera presence, blocks, mutes, conversations
+- Nao altera status constraint (usa 'expired' existente)
+- Novas colunas sao nullable, sem impacto em registros existentes
+- Novo estado UNAVAILABLE_TEMP so e atingido por condicao especifica nova
+- RLS existente ja permite UPDATE por para_user_id
+- A query de waves ignoradas deve obrigatoriamente filtrar por de_user_id = currentUserId, evitando bloquear interações de terceiros.
