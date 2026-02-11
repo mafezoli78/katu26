@@ -425,11 +425,15 @@ export function useWaves() {
     setReceivedWaves(prev => prev.filter(w => w.id !== waveId));
     setUnreadCount(prev => Math.max(0, prev - 1));
 
-    // Persist: set status to 'expired' so both users return to NONE
-    // This ensures deriveFacts no longer sees a pending wave
+    // Persist: set status to 'expired' with 2h cooldown
     const { error } = await supabase
       .from('waves')
-      .update({ status: 'expired', visualizado: true })
+      .update({
+        status: 'expired',
+        visualizado: true,
+        ignored_at: new Date().toISOString(),
+        ignore_cooldown_until: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      } as any)
       .eq('id', waveId);
 
     if (error) {

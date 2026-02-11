@@ -124,7 +124,6 @@ export function useInteractionState({
         reinteracao_permitida_em: c.reinteracao_permitida_em,
       })),
       waves: [
-        // Waves enviados
         ...sentWaves.map(w => ({
           id: w.id,
           de_user_id: w.de_user_id,
@@ -132,8 +131,8 @@ export function useInteractionState({
           place_id: w.place_id,
           status: w.status,
           expires_at: w.expires_at,
+          ignore_cooldown_until: (w as any).ignore_cooldown_until ?? null,
         })),
-        // Waves recebidos
         ...receivedWaves.map(w => ({
           id: w.id,
           de_user_id: w.de_user_id,
@@ -141,6 +140,7 @@ export function useInteractionState({
           place_id: w.place_id,
           status: w.status,
           expires_at: w.expires_at,
+          ignore_cooldown_until: (w as any).ignore_cooldown_until ?? null,
         })),
       ],
     };

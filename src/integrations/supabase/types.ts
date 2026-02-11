@@ -488,6 +488,8 @@ export type Database = {
           de_user_id: string
           expires_at: string | null
           id: string
+          ignore_cooldown_until: string | null
+          ignored_at: string | null
           location_id: string | null
           para_user_id: string
           place_id: string | null
@@ -500,6 +502,8 @@ export type Database = {
           de_user_id: string
           expires_at?: string | null
           id?: string
+          ignore_cooldown_until?: string | null
+          ignored_at?: string | null
           location_id?: string | null
           para_user_id: string
           place_id?: string | null
@@ -512,6 +516,8 @@ export type Database = {
           de_user_id?: string
           expires_at?: string | null
           id?: string
+          ignore_cooldown_until?: string | null
+          ignored_at?: string | null
           location_id?: string | null
           para_user_id?: string
           place_id?: string | null
