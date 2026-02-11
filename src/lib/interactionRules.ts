@@ -29,6 +29,7 @@ export enum InteractionState {
   ENDED_BY_OTHER = 5, // Outro encerrou → "Interação indisponível" (inativo)
   MUTED = 6,          // Silenciei este usuário → "Silenciado" (24h)
   BLOCKED = 7,        // Bloqueio bilateral → Usuário invisível
+  UNAVAILABLE_TEMP = 8, // Cooldown temporário por ignore → "Indisponível no momento"
 }
 
 /**
@@ -58,6 +59,8 @@ export interface InteractionFacts {
   hasWaveFromB: boolean;
   /** Existe wave pendente de A→B (não expirado) */
   hasWaveFromA: boolean;
+  /** B ignorou meu aceno e cooldown está ativo */
+  hasIgnoreCooldownFromB: boolean;
   /** ID da conversa (se existir) */
   conversationId?: string;
 }
@@ -187,6 +190,17 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
   // 5. COOLDOWN EXPIRADO - após 24h, libera nova interação
   // Se havia conversa mas cooldown já expirou, permite acenar novamente (cai para NONE)
 
+  // 5.5. COOLDOWN TEMPORÁRIO POR IGNORE
+  if (facts.hasIgnoreCooldownFromB) {
+    return {
+      state: InteractionState.UNAVAILABLE_TEMP,
+      stateName: 'UNAVAILABLE_TEMP',
+      button: { label: 'Indisponível no momento', disabled: true, action: 'none' },
+      isVisible: true,
+      blockReason: 'Aguarde para enviar novo aceno',
+    };
+  }
+
   // 6. WAVE RECEBIDO - pode responder
   if (facts.hasWaveFromB) {
     return {
@@ -265,6 +279,7 @@ export interface WaveRecord {
   place_id: string;
   status: string;
   expires_at: string | null;
+  ignore_cooldown_until?: string | null;
 }
 
 export interface InteractionData {
@@ -358,6 +373,17 @@ export function deriveFacts(
     w => w.de_user_id === userA && w.para_user_id === userB
   );
 
+  // 6. IGNORE COOLDOWN - B ignorou aceno de A com cooldown ativo
+  const hasIgnoreCooldownFromB = data.waves.some(
+    w =>
+      w.place_id === placeId &&
+      w.status === 'expired' &&
+      w.de_user_id === userA &&
+      w.para_user_id === userB &&
+      w.ignore_cooldown_until &&
+      new Date(w.ignore_cooldown_until) > now
+  );
+
   return {
     isBlocked,
     isBlockedByMe,
@@ -370,6 +396,7 @@ export function deriveFacts(
     closedByA,
     hasWaveFromB,
     hasWaveFromA,
+    hasIgnoreCooldownFromB,
     conversationId: conversation?.id,
   };
 }
@@ -400,6 +427,9 @@ export function canWave(facts: InteractionFacts): { allowed: boolean; reason?: s
   }
   if (facts.hasWaveFromA) {
     return { allowed: false, reason: 'Você já acenou para esta pessoa neste local' };
+  }
+  if (facts.hasIgnoreCooldownFromB) {
+    return { allowed: false, reason: 'Aguarde para enviar novo aceno' };
   }
   // hasWaveFromB é permitido (pode acenar de volta? Na verdade deveria aceitar)
   // Mas a UI mostraria "Responder aceno", então não chegaria aqui
@@ -449,6 +479,7 @@ export function getStateName(state: InteractionState): string {
     [InteractionState.ENDED_BY_OTHER]: 'Encerrado pelo outro',
     [InteractionState.MUTED]: 'Silenciado',
     [InteractionState.BLOCKED]: 'Bloqueado',
+    [InteractionState.UNAVAILABLE_TEMP]: 'Indisponível temporariamente',
   };
   return names[state];
 }

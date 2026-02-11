@@ -26,6 +26,7 @@ export interface NormalizedWave {
   place_id: string;
   status: string;
   expires_at: string | null;
+  ignore_cooldown_until?: string | null;
 }
 
 export interface NormalizedConversation {
@@ -125,21 +126,19 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
         mutesResult,
         blocksResult
       ] = await Promise.all([
-        // 1. Acenos enviados (pendentes, não expirados)
+        // 1. Acenos enviados (pendentes + expirados com cooldown ativo)
         supabase
           .from('waves')
-          .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at')
+          .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at, ignore_cooldown_until')
           .eq('de_user_id', currentUserId)
-          .eq('status', 'pending')
-          .or(`expires_at.is.null,expires_at.gt.${now}`),
+          .in('status', ['pending', 'expired']),
         
         // 2. Acenos recebidos (pendentes, não expirados)
         supabase
           .from('waves')
-          .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at')
+          .select('id, de_user_id, para_user_id, place_id, location_id, status, expires_at, ignore_cooldown_until')
           .eq('para_user_id', currentUserId)
-          .eq('status', 'pending')
-          .or(`expires_at.is.null,expires_at.gt.${now}`),
+          .in('status', ['pending', 'expired']),
         
         // 3. Conversas (ativas OU em cooldown neste local)
         supabase
@@ -175,6 +174,7 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
         place_id: wave.place_id || wave.location_id || '',
         status: wave.status,
         expires_at: wave.expires_at,
+        ignore_cooldown_until: wave.ignore_cooldown_until ?? null,
       });
 
       // IMPORTANTE: Só atualizar se temos dados válidos (sem erro)
@@ -296,6 +296,20 @@ export function useInteractionData(placeId: string | null): UseInteractionDataRe
           if (involvesUser && isCurrentPlace) {
             if (payload.eventType === 'INSERT' && record?.para_user_id === user.id && record?.status === 'pending') {
               toast({ title: 'Você recebeu um aceno! 👋' });
+            }
+            // Toast para remetente quando aceno é ignorado com cooldown
+            if (
+              payload.eventType === 'UPDATE' &&
+              record?.status === 'expired' &&
+              record?.de_user_id === user.id &&
+              record?.ignore_cooldown_until &&
+              new Date(record.ignore_cooldown_until) > new Date() &&
+              oldRecord?.status === 'pending' // só na transição real
+            ) {
+              toast({
+                title: 'A pessoa está indisponível no momento',
+                description: 'Tente novamente mais tarde.',
+              });
             }
             fetchData();
           }
