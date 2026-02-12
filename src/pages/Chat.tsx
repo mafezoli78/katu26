@@ -59,13 +59,10 @@ export default function Chat() {
     const currentReason = chatState.endedReason;
     
     // Only show toast on real transition: previous was null, current is a terminal reason
-    if (previousEndedRef.current === null && currentReason && currentReason !== 'system_suspended') {
-      const message = chatState.wasEndedByMe
-        ? 'Conversa encerrada por você'
-        : 'A outra pessoa encerrou a conversa';
-      
+    // "Ended by other" toast is now handled directly in useChat Realtime handler
+    if (previousEndedRef.current === null && currentReason && currentReason !== 'system_suspended' && chatState.wasEndedByMe) {
       toast({
-        title: message,
+        title: 'Conversa encerrada por você',
         description: 'As mensagens foram apagadas',
       });
     }
