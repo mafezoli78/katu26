@@ -1,193 +1,190 @@
-# Plan: Cooldown de 2 horas ao ignorar aceno
 
-## Estrategia
 
-Adicionar duas colunas na tabela `waves`, atualizar a funcao `ignoreWave` para gravar o cooldown, expandir a query de dados para incluir waves ignoradas com cooldown ativo, adicionar um novo fato booleano e estado na maquina canonica, e disparar toast Realtime para o remetente.
+# Plano: Neutralizar Hover para Mobile
 
----
+## Diagnostico
 
-## 1. Migracao de banco de dados
+### Onde existem hovers hoje
 
-Adicionar duas colunas na tabela `waves`:
+**1. Componente base Button (`src/components/ui/button.tsx`)** -- 6 variantes, todas com `hover:`:
+- default: `hover:bg-primary/90`
+- destructive: `hover:bg-destructive/90`
+- outline: `hover:bg-accent hover:text-accent-foreground`
+- secondary: `hover:bg-secondary/80`
+- ghost: `hover:bg-accent hover:text-accent-foreground`
+- link: `hover:underline`
 
-```sql
-ALTER TABLE waves
-  ADD COLUMN ignored_at timestamptz,
-  ADD COLUMN ignore_cooldown_until timestamptz;
-```
+**2. Outros componentes UI Shadcn** (13 arquivos):
+- accordion, alert-dialog, breadcrumb, calendar, command, context-menu, dialog, dropdown-menu, navigation-menu, select, sheet, sidebar, toast, toggle
 
-Sem alterar constraints, status values, ou RLS.
+**3. Paginas e componentes do app** (8 arquivos):
+- Auth.tsx, Home.tsx, Profile.tsx, Waves.tsx, NotFound.tsx
+- ConversationsList.tsx, PlaceSelector.tsx, PasswordChangeDialog.tsx
 
----
+**4. CSS global** (`src/index.css`):
+- `.place-card:hover { @apply shadow-md; }`
 
-## 2. useWaves.ts -- Gravar cooldown ao ignorar
+**5. Tailwind config** (`tailwind.config.ts`):
+- `card-hover` boxShadow definido (usado indiretamente)
 
-Na funcao `ignoreWave`, adicionar os dois campos no update:
-
-```text
-update({
-  status: 'expired',
-  visualizado: true,
-  ignored_at: new Date().toISOString(),
-  ignore_cooldown_until: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
-})
-```
+Total: ~26 arquivos com `hover:` classes.
 
 ---
 
-## 3. useInteractionData.ts -- Buscar waves ignoradas com cooldown ativo
+## Estrategia Recomendada: Media Query Global no CSS
 
-Problema: a query atual so busca waves com `status === 'pending'`. Waves ignoradas (status `expired`) com cooldown ativo nao chegam ao frontend.
+Alterar arquivo por arquivo seria arriscado e trabalhoso. A solucao mais segura e uma unica regra CSS global que neutraliza hover em dispositivos touch.
 
-Na query atual que já busca waves, você deve:
+Adicionar no `src/index.css`, dentro de `@layer base`:
 
-🔁 TROCAR
-
-Se hoje está assim: .eq('status', 'pending')
-
-Troque por: .in('status', ['pending', 'expired'])
-
-Só isso.
-
-Não criar nova query.
-
-Não criar novo campo retornado.
-
-Não duplicar fonte de dados
-
----
-
-## 4. interactionRules.ts -- Novo estado UNAVAILABLE_TEMP
-
-### 4a. Enum
-
-Adicionar entre WAVE_SENT e WAVE_RECEIVED (ou apos WAVE_SENT):
-
-```text
-UNAVAILABLE_TEMP = 8
-```
-
-&nbsp;
-
-### 4b. InteractionFacts
-
-Adicionar:
-
-```text
-hasIgnoreCooldownFromB: boolean  // B ignorou meu aceno e cooldown esta ativo
-```
-
-### 4c. getInteractionState
-
-Inserir o check de hasIgnoreCooldownFromB imediatamente após os checks de block, mute e conversation, e antes de qualquer lógica de WAVE_SENT, WAVE_RECEIVED ou NONE.
-
-```text
-if (facts.hasIgnoreCooldownFromB) {
-  return {
-    state: InteractionState.UNAVAILABLE_TEMP,
-    stateName: 'UNAVAILABLE_TEMP',
-    button: { label: 'Indisponivel no momento', disabled: true, action: 'none' },
-    isVisible: true,
-    blockReason: 'Aguarde para enviar novo aceno',
-  };
+```css
+@media (hover: none) {
+  *, *::before, *::after {
+    --tw-hover-opacity: initial;
+  }
+  
+  .hover\:bg-primary\/90:hover,
+  .hover\:bg-destructive\/90:hover,
+  .hover\:bg-accent:hover,
+  .hover\:bg-secondary\/80:hover,
+  .hover\:bg-accent\/90:hover,
+  .hover\:bg-accent\/10:hover,
+  .hover\:bg-muted:hover,
+  .hover\:bg-white\/10:hover,
+  .hover\:bg-destructive\/10:hover,
+  .hover\:bg-katu-green\/90:hover,
+  .hover\:text-accent-foreground:hover,
+  .hover\:text-foreground:hover,
+  .hover\:text-destructive:hover,
+  .hover\:text-primary\/90:hover,
+  .hover\:underline:hover,
+  .hover\:opacity-100:hover,
+  .hover\:scale-105:hover,
+  .hover\:border-katu-green\/50:hover,
+  .group-hover\:opacity-100:hover,
+  .place-card:hover {
+    all: unset;  /* Problema: isso remove TUDO */
+  }
 }
 ```
 
-### 4d. deriveFacts
+**Problema**: `all: unset` e seletores individuais sao frageis e dificeis de manter.
 
-Adicionar novo parametro ou expandir `WaveRecord` para incluir `ignore_cooldown_until`. Calcular:
+---
 
-```text
-const hasIgnoreCooldownFromB = data.waves.some(
-  w => w.place_id === placeId
-    && w.status === 'expired'
-    && w.de_user_id === userA        // EU enviei
-    && w.para_user_id === userB      // para B
-    && w.ignore_cooldown_until
-    && new Date(w.ignore_cooldown_until) > now
-);
-```
+## Estrategia Final (mais robusta): Desabilitar hover via Tailwind
 
-### 4e. canWave
+A melhor abordagem: configurar o Tailwind para que `hover:` so aplique em dispositivos com hover real.
 
-Adicionar validacao:
+### Alteracao no `tailwind.config.ts`
 
-```text
-if (facts.hasIgnoreCooldownFromB) {
-  return { allowed: false, reason: 'Aguarde para enviar novo aceno' };
+Na raiz da config, adicionar `future` flag **OU** usar plugin customizado que envolve todos os estilos `hover:` dentro de `@media (hover: hover)`.
+
+**Metodo concreto**: adicionar no `src/index.css` uma unica regra global simples:
+
+```css
+@media (hover: none) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Neutraliza todos os hovers de Tailwind em dispositivos touch */
+  [class*="hover\:"]:hover {
+    /* Reseta propriedades visuais comuns */
+    background-color: inherit;
+    color: inherit;
+    text-decoration: inherit;
+    opacity: inherit;
+    border-color: inherit;
+    transform: inherit;
+    box-shadow: inherit;
+  }
+  
+  .place-card:hover {
+    box-shadow: none;
+  }
 }
 ```
 
-### 4f. Helpers
-
-Atualizar `getStateName` e `isActionable` para o novo estado.
+**Problema**: `inherit` pode causar efeitos colaterais inesperados em componentes aninhados.
 
 ---
 
-## 5. useInteractionState.ts -- Passar dados expandidos
+## Estrategia FINAL DEFINITIVA (recomendada)
 
-Incluir as waves ignoradas com cooldown nos dados passados para `deriveFacts`, combinando-as com as demais waves.
+A forma mais limpa no ecossistema Tailwind: redefinir a variante `hover` para exigir `@media (hover: hover)`.
 
----
+### Unico arquivo alterado: `tailwind.config.ts`
 
-## 6. Toast Realtime para o remetente (User A)
+Adicionar plugin inline:
 
-No handler Realtime de waves em `useInteractionData.ts` (linha 282), quando receber UPDATE:
+```ts
+plugins: [
+  require("tailwindcss-animate"),
+  function({ addVariant }) {
+    addVariant('hover', '@media (hover: hover) { &:hover }');
+  },
+],
+```
 
-```text
-if (
-  payload.eventType === 'UPDATE'
-  && record?.status === 'expired'
-  && record?.de_user_id === user.id           // EU sou o remetente
-  && record?.ignore_cooldown_until             // tem cooldown
-  && new Date(record.ignore_cooldown_until) > new Date()
-) {
-  toast({
-    title: 'A pessoa esta indisponivel no momento',
-    description: 'Tente novamente mais tarde.'
-  });
+Isso redefine a variante `hover:` do Tailwind globalmente. Todo `hover:bg-*`, `hover:text-*`, etc. so sera aplicado em dispositivos que suportam hover real (mouse). Em dispositivos touch, nenhum hover sera ativado.
+
+### Arquivo complementar: `src/index.css`
+
+Neutralizar o unico hover vanilla CSS:
+
+```css
+@media (hover: none) {
+  .place-card:hover {
+    box-shadow: inherit;
+    transform: none;
+  }
 }
 ```
 
-Isso garante que A receba o toast via Realtime quando B ignora.
+---
 
-Garantir que o toast só dispare quando houver transição real para status 'expired'.
+## Arquivos alterados
 
-Não deve disparar novamente se o registro já estiver expirado anteriormente.
+| Arquivo | Mudanca |
+|---|---|
+| `tailwind.config.ts` | Adicionar plugin que redefine variante `hover` |
+| `src/index.css` | Neutralizar `.place-card:hover` para touch |
+
+**Total: 2 arquivos.**
+
+Zero alteracoes em componentes, paginas ou logica.
 
 ---
 
-## Arquivos impactados
+## Analise de Risco
 
-
-| Arquivo                            | Mudanca                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| Migracao SQL                       | ADD COLUMN ignored_at, ignore_cooldown_until                                |
-| `src/hooks/useWaves.ts`            | Gravar cooldown no ignoreWave                                               |
-| `src/hooks/useInteractionData.ts`  | Nova query + toast Realtime + novo campo retornado                          |
-| `src/lib/interactionRules.ts`      | Novo estado, novo fato, novo check em getInteractionState, canWave, helpers |
-| `src/hooks/useInteractionState.ts` | Passar waves expandidas para deriveFacts                                    |
-
+| Aspecto | Impacto |
+|---|---|
+| `active:` | Nenhum. Variante separada, nao afetada |
+| `disabled:` | Nenhum. Variante separada |
+| `focus-visible:` | Nenhum. Variante separada |
+| Acessibilidade | Preservada. Focus-visible intacto |
+| Logica de negocio | Zero impacto |
+| Componentes Shadcn | Hover some em mobile, permanece em desktop (caso futuro) |
+| Regressao visual | Minima. Botoes ficam com cor solida sem mudanca ao toque prolongado |
 
 ---
 
 ## Ordem de execucao
 
 ```text
-1. Migracao (add columns)
-2. useWaves.ts (gravar cooldown)
-3. interactionRules.ts (novo estado + fato + validacao)
-4. useInteractionData.ts (query expandida + toast Realtime)
-5. useInteractionState.ts (passar dados expandidos)
+1. tailwind.config.ts (plugin hover)
+2. src/index.css (place-card)
+3. Teste visual em viewport mobile
 ```
 
 ---
 
-## Risco de regressao: Baixo
+## Resultado esperado
 
-- Nao altera presence, blocks, mutes, conversations
-- Nao altera status constraint (usa 'expired' existente)
-- Novas colunas sao nullable, sem impacto em registros existentes
-- Novo estado UNAVAILABLE_TEMP so e atingido por condicao especifica nova
-- RLS existente ja permite UPDATE por para_user_id
-- A query de waves ignoradas deve obrigatoriamente filtrar por de_user_id = currentUserId, evitando bloquear interações de terceiros.
+- Nenhum efeito de hover visivel em dispositivos touch
+- Toque em botao: cor permanece estavel, sem "sticky hover"
+- Estados `active`, `disabled`, `focus-visible` intactos
+- Se no futuro houver versao desktop, hovers voltam automaticamente
+
