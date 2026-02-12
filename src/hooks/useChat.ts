@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConversations, ConversationWithDetails } from './useConversations';
 import { PresenceLogicalState, PresenceEndReason } from './usePresence';
+import { toast } from '@/hooks/use-toast';
 
 export type ConversationEndReason = 'manual' | 'presence_end' | 'system_suspended';
 
@@ -160,10 +161,19 @@ export function useChat(options?: UseChatOptions) {
           if (conversationIds.includes(updated.id) && !updated.ativo) {
             console.log('[useChat] Conversation deactivated:', updated.id);
             
+            const wasEndedByMe = updated.encerrado_por === user?.id;
+            
+            // Toast for the OTHER user — fired directly from Realtime handler
+            // so it works regardless of Chat page being open or closed
+            if (!wasEndedByMe) {
+              toast({
+                title: 'A outra pessoa encerrou a conversa',
+                description: 'As mensagens foram apagadas',
+              });
+            }
+            
             // If this was the active conversation, update state
             if (chatState.conversation?.id === updated.id) {
-              // R3: Check if it was ended by the other person
-              const wasEndedByMe = updated.encerrado_por === user?.id;
               setChatState({
                 isActive: false,
                 conversation: null,
