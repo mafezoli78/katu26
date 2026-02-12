@@ -199,3 +199,11 @@
     @apply scale-[0.99];
   }
 }
+
+/* Neutralizar hover vanilla CSS em dispositivos touch */
+@media (hover: none) {
+  .place-card:hover {
+    box-shadow: inherit;
+    transform: none;
+  }
+}
