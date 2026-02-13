@@ -191,7 +191,8 @@ export function getInteractionState(facts: InteractionFacts): InteractionResult 
   // Se havia conversa mas cooldown já expirou, permite acenar novamente (cai para NONE)
 
   // 5.5. COOLDOWN TEMPORÁRIO POR IGNORE
-  if (facts.hasIgnoreCooldownFromB) {
+  // Se B enviou um novo aceno, o cooldown é quebrado (B decidiu interagir)
+  if (facts.hasIgnoreCooldownFromB && !facts.hasWaveFromB) {
     return {
       state: InteractionState.UNAVAILABLE_TEMP,
       stateName: 'UNAVAILABLE_TEMP',
