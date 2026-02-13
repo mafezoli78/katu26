@@ -32,7 +32,7 @@
     --accent: 27 88% 67%; /* #F4A261 */
     --accent-foreground: 0 0% 10%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 84% 67%; /* #f46161 */
     --destructive-foreground: 0 0% 100%;
 
     --border: 0 0% 90%;
@@ -73,7 +73,7 @@
     --accent: 27 88% 60%;
     --accent-foreground: 0 0% 10%;
 
-    --destructive: 0 62% 40%;
+    --destructive: 0 84% 67%; /* #f46161 */
     --destructive-foreground: 0 0% 100%;
 
     --border: 220 15% 20%;
