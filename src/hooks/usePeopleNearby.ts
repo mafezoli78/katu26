@@ -9,6 +9,7 @@ export interface PersonNearby {
   interests: UserInterest[];
   commonInterests: string[];
   assuntoAtual: string | null;
+  checkinSelfieUrl: string | null;
 }
 
 /**
@@ -102,7 +103,8 @@ export function usePeopleNearby(placeId: string | null) {
             profile: profileResult.data,
             interests: interestsResult.data || [],
             commonInterests,
-            assuntoAtual: presence.assunto_atual || null
+            assuntoAtual: presence.assunto_atual || null,
+            checkinSelfieUrl: (presence as any).checkin_selfie_url || null,
           });
         }
       }

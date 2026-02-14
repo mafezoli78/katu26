@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, MapPin, ArrowLeft } from 'lucide-react';
 import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS_METERS, EXPANDED_SEARCH_RADIUS_METERS, MAX_SEARCH_RADIUS_METERS, MIN_RESULTS_FOR_EXPANSION } from '@/services/placesService';
 import { PlaceSelector } from '@/components/location/PlaceSelector';
+import { CheckinSelfie } from '@/components/location/CheckinSelfie';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Location() {
   const { user } = useAuth();
@@ -28,7 +30,7 @@ export default function Location() {
     currentPresence,
   } = usePresence();
 
-  const [step, setStep] = useState<'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'expression'>('detecting');
+  const [step, setStep] = useState<'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'expression' | 'selfie'>('detecting');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [newPlaceName, setNewPlaceName] = useState('');
@@ -240,7 +242,7 @@ export default function Location() {
     setStep('expression');
   };
 
-  const handleActivatePresence = async () => {
+  const handleActivatePresence = async (selfieUrl?: string) => {
     setActivating(true);
     
     try {
@@ -248,11 +250,9 @@ export default function Location() {
       const trimmedExpression = expressionText.trim() || undefined;
 
       if (selectedPlaceId) {
-        // Activate presence at existing place (Foursquare or temporary)
         const result = await activatePresenceAtPlace(selectedPlaceId, DEFAULT_INTENTION_ID, trimmedExpression);
         error = result.error;
       } else if (newPlaceName.trim() && userCoords) {
-        // Create new temporary place and activate presence
         const result = await createTemporaryPlace(
           newPlaceName.trim(),
           userCoords.lat,
@@ -268,6 +268,17 @@ export default function Location() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao ativar presença', description: error.message });
       } else {
+        // Update presence with selfie URL if provided
+        if (selfieUrl && user) {
+          await supabase
+            .from('presence')
+            .update({ 
+              checkin_selfie_url: selfieUrl,
+              checkin_selfie_created_at: new Date().toISOString()
+            })
+            .eq('user_id', user.id)
+            .eq('ativo', true);
+        }
         navigate('/home', { replace: true });
       }
     } catch (err) {
@@ -275,6 +286,39 @@ export default function Location() {
     } finally {
       setActivating(false);
     }
+  };
+
+  const handleSelfieConfirm = async (blob: Blob) => {
+    if (!user) return;
+    setActivating(true);
+
+    try {
+      // Upload selfie to storage
+      const fileName = `${user.id}/${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('checkin-selfies')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) {
+        toast({ variant: 'destructive', title: 'Erro ao enviar foto' });
+        setActivating(false);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('checkin-selfies')
+        .getPublicUrl(fileName);
+
+      // Activate presence with selfie URL
+      await handleActivatePresence(urlData.publicUrl);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Erro inesperado' });
+      setActivating(false);
+    }
+  };
+
+  const handleSelfieCancel = () => {
+    setStep('expression');
   };
 
   return (
@@ -446,22 +490,23 @@ export default function Location() {
                 </div>
 
                 <Button 
-                  onClick={handleActivatePresence}
-                  disabled={activating}
+                  onClick={() => setStep('selfie')}
                   className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
                 >
-                  {activating ? (
-                    <>
-                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                      Ativando...
-                    </>
-                  ) : (
-                    'Continuar'
-                  )}
+                  Continuar
                 </Button>
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* Selfie step */}
+        {step === 'selfie' && (
+          <CheckinSelfie
+            onConfirm={handleSelfieConfirm}
+            onCancel={handleSelfieCancel}
+            uploading={activating}
+          />
         )}
       </div>
     </MobileLayout>
