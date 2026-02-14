@@ -268,6 +268,8 @@ export type Database = {
         Row: {
           assunto_atual: string | null
           ativo: boolean
+          checkin_selfie_created_at: string | null
+          checkin_selfie_url: string | null
           confirmed_at: string | null
           disponivel: boolean
           disponivel_desde: string | null
@@ -284,6 +286,8 @@ export type Database = {
         Insert: {
           assunto_atual?: string | null
           ativo?: boolean
+          checkin_selfie_created_at?: string | null
+          checkin_selfie_url?: string | null
           confirmed_at?: string | null
           disponivel?: boolean
           disponivel_desde?: string | null
@@ -300,6 +304,8 @@ export type Database = {
         Update: {
           assunto_atual?: string | null
           ativo?: boolean
+          checkin_selfie_created_at?: string | null
+          checkin_selfie_url?: string | null
           confirmed_at?: string | null
           disponivel?: boolean
           disponivel_desde?: string | null

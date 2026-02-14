@@ -231,17 +231,18 @@ export function PersonCard({
         <Card className="border-0 shadow-sm overflow-hidden">
           <CardContent className="p-0">
             <div className="flex h-full">
-              {/* FOTO */}
+              {/* FOTO - selfie de check-in tem prioridade */}
               <div
                 className="w-[36%] flex items-center p-2.5 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (person.profile.foto_url) setPhotoOpen(true);
+                  const displayPhoto = person.checkinSelfieUrl || person.profile.foto_url;
+                  if (displayPhoto) setPhotoOpen(true);
                 }}
               >
-                {person.profile.foto_url ? (
+                {(person.checkinSelfieUrl || person.profile.foto_url) ? (
                   <img
-                    src={person.profile.foto_url}
+                    src={person.checkinSelfieUrl || person.profile.foto_url!}
                     alt={person.profile.nome || ''}
                     className="w-full aspect-square object-cover rounded-lg"
                   />
@@ -284,9 +285,9 @@ export function PersonCard({
       <Dialog open={photoOpen} onOpenChange={setPhotoOpen}>
         <DialogContent className="max-w-3xl">
           <DialogTitle className="sr-only">Foto ampliada</DialogTitle>
-          {person.profile.foto_url && (
+          {(person.checkinSelfieUrl || person.profile.foto_url) && (
             <img
-              src={person.profile.foto_url}
+              src={person.checkinSelfieUrl || person.profile.foto_url!}
               alt={person.profile.nome || ''}
               className="w-full max-w-md mx-auto aspect-square object-cover rounded-lg"
             />
