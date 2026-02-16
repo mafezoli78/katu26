@@ -125,22 +125,16 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     }
   }, []);
 
-  // Efeito inicial
+  // Cleanup only - NO auto-requesting permissions on mount
+  // Consumers must call refresh(), startWatching() explicitly via user action
   useEffect(() => {
     mountedRef.current = true;
-
-    if (watchPosition) {
-      getCurrentPosition(); // Pega posição inicial
-      startWatching();
-    } else {
-      getCurrentPosition();
-    }
 
     return () => {
       mountedRef.current = false;
       stopWatching();
     };
-  }, [watchPosition, getCurrentPosition, startWatching, stopWatching]);
+  }, [stopWatching]);
 
   return {
     ...state,

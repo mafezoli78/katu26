@@ -47,8 +47,9 @@ export default function Location() {
   const [closestPlace, setClosestPlace] = useState<Place | null>(null);
   const [searchingByName, setSearchingByName] = useState(false);
 
-  // Auto-search for places when coordinates are obtained
+  // Search for places - called explicitly after user grants geolocation
   // Progressive radius expansion: 300m → 600m → 800m (max)
+  const fetchPlacesRef = useRef<((lat: number, lng: number) => Promise<void>) | null>(null);
   const fetchPlaces = useCallback(async (lat: number, lng: number) => {
     setPlacesLoading(true);
     
@@ -113,13 +114,17 @@ export default function Location() {
     }
   }, [fetchNearbyTemporaryPlaces, toast]);
 
-  // Flag to prevent duplicate fetches per navigation cycle
+  // Keep ref in sync with latest fetchPlaces
+  fetchPlacesRef.current = fetchPlaces;
+
   const hasFetchedRef = useRef(false);
+  const isRequestingPermissionRef = useRef(false);
   
   // Reset fetch flag when component unmounts (new navigation cycle)
   useEffect(() => {
     return () => {
       hasFetchedRef.current = false;
+      isRequestingPermissionRef.current = false;
     };
   }, []);
 
@@ -139,26 +144,34 @@ export default function Location() {
       return;
     }
 
-    // Prevent duplicate fetches in same navigation cycle
-    if (hasFetchedRef.current) return;
+    // Prevent duplicate fetches and concurrent permission requests
+    if (hasFetchedRef.current || isRequestingPermissionRef.current) return;
 
-    // Request geolocation and auto-search
+    // Guard: only request once
+    isRequestingPermissionRef.current = true;
+
+    // Request geolocation (single request, guarded by refs)
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          if (hasFetchedRef.current) return;
+          if (hasFetchedRef.current) {
+            isRequestingPermissionRef.current = false;
+            return;
+          }
           hasFetchedRef.current = true;
+          isRequestingPermissionRef.current = false;
 
           const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
           console.log(`[Location] 📍 Got user coordinates: lat=${coords.lat}, lng=${coords.lng}`);
           setUserCoords(coords);
           
-          // Auto-fetch places immediately
-          fetchPlaces(coords.lat, coords.lng);
+          // Fetch places using stable ref
+          fetchPlacesRef.current?.(coords.lat, coords.lng);
           
           setStep('select');
         },
         (error) => {
+          isRequestingPermissionRef.current = false;
           console.error('Geolocation error:', error);
           toast({ 
             variant: 'destructive', 
@@ -174,10 +187,12 @@ export default function Location() {
         }
       );
     } else {
+      isRequestingPermissionRef.current = false;
       toast({ variant: 'destructive', title: 'Geolocalização não suportada' });
       setStep('select');
     }
-  }, [user, navigate, toast, fetchPlaces, loading, currentPresence]);
+    // STABLE deps only - no callbacks that could change between renders
+  }, [user, navigate, loading, currentPresence]);
 
   const handleSelectPlace = (placeId: string) => {
     setSelectedPlaceId(placeId);
