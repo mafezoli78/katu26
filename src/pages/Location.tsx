@@ -134,19 +134,19 @@ export default function Location() {
       return;
     }
 
-    // Check if permission is already granted (via Permissions API, no prompt)
+    // Passive check only — never trigger a prompt or navigate automatically
     if (navigator.permissions) {
       navigator.permissions.query({ name: 'geolocation' }).then((result) => {
         if (result.state === 'granted') {
+          // Permission already granted from a previous session — auto-proceed is safe
           setPermissionStatus('granted');
-          // Auto-proceed since already granted
           handleRequestLocation();
-        } else if (result.state === 'denied') {
-          setPermissionStatus('blocked');
         }
-        // 'prompt' = default, show button
+        // For 'denied' or 'prompt', stay on permission screen and wait for user action.
+        // We do NOT set 'blocked' here because many mobile browsers report 'denied'
+        // even when the user has never been asked.
       }).catch(() => {
-        // Permissions API not supported, show button
+        // Permissions API not supported, stay on permission screen
       });
     }
   }, [user, navigate, loading, currentPresence]);
