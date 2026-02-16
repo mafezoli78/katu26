@@ -30,7 +30,9 @@ export default function Location() {
     currentPresence,
   } = usePresence();
 
-  const [step, setStep] = useState<'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'expression' | 'selfie'>('detecting');
+  const [step, setStep] = useState<'permission' | 'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'expression' | 'selfie'>('permission');
+  const [permissionStatus, setPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'blocked'>('prompt');
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [newPlaceName, setNewPlaceName] = useState('');
@@ -118,81 +120,90 @@ export default function Location() {
   fetchPlacesRef.current = fetchPlaces;
 
   const hasFetchedRef = useRef(false);
-  const isRequestingPermissionRef = useRef(false);
-  
-  // Reset fetch flag when component unmounts (new navigation cycle)
-  useEffect(() => {
-    return () => {
-      hasFetchedRef.current = false;
-      isRequestingPermissionRef.current = false;
-    };
-  }, []);
 
+  // Check permission status on mount (without triggering prompt)
   useEffect(() => {
     if (!user) {
       navigate('/auth', { replace: true });
       return;
     }
-
-    // Wait for presence state to load before deciding
     if (loading) return;
-
-    // Don't fetch if user already has active presence - redirect to home
     if (currentPresence) {
       console.log('[Location] User has active presence, redirecting to home');
       navigate('/home', { replace: true });
       return;
     }
 
-    // Prevent duplicate fetches and concurrent permission requests
-    if (hasFetchedRef.current || isRequestingPermissionRef.current) return;
-
-    // Guard: only request once
-    isRequestingPermissionRef.current = true;
-
-    // Request geolocation (single request, guarded by refs)
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          if (hasFetchedRef.current) {
-            isRequestingPermissionRef.current = false;
-            return;
-          }
-          hasFetchedRef.current = true;
-          isRequestingPermissionRef.current = false;
-
-          const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
-          console.log(`[Location] 📍 Got user coordinates: lat=${coords.lat}, lng=${coords.lng}`);
-          setUserCoords(coords);
-          
-          // Fetch places using stable ref
-          fetchPlacesRef.current?.(coords.lat, coords.lng);
-          
-          setStep('select');
-        },
-        (error) => {
-          isRequestingPermissionRef.current = false;
-          console.error('Geolocation error:', error);
-          toast({ 
-            variant: 'destructive', 
-            title: 'Não foi possível obter sua localização',
-            description: 'Por favor, permita o acesso à localização'
-          });
-          setStep('select');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 30000,
+    // Check if permission is already granted (via Permissions API, no prompt)
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        if (result.state === 'granted') {
+          setPermissionStatus('granted');
+          // Auto-proceed since already granted
+          handleRequestLocation();
+        } else if (result.state === 'denied') {
+          setPermissionStatus('blocked');
         }
-      );
-    } else {
-      isRequestingPermissionRef.current = false;
-      toast({ variant: 'destructive', title: 'Geolocalização não suportada' });
-      setStep('select');
+        // 'prompt' = default, show button
+      }).catch(() => {
+        // Permissions API not supported, show button
+      });
     }
-    // STABLE deps only - no callbacks that could change between renders
   }, [user, navigate, loading, currentPresence]);
+
+  // Explicit handler: user taps "Permitir localização"
+  const handleRequestLocation = useCallback(() => {
+    if (isRequestingPermission || hasFetchedRef.current) return;
+
+    setIsRequestingPermission(true);
+    setStep('detecting');
+
+    if (!navigator.geolocation) {
+      setIsRequestingPermission(false);
+      setPermissionStatus('blocked');
+      toast({ variant: 'destructive', title: 'Geolocalização não suportada' });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        hasFetchedRef.current = true;
+        setIsRequestingPermission(false);
+        setPermissionStatus('granted');
+
+        const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+        console.log(`[Location] 📍 Got user coordinates: lat=${coords.lat}, lng=${coords.lng}`);
+        setUserCoords(coords);
+        fetchPlacesRef.current?.(coords.lat, coords.lng);
+        setStep('select');
+      },
+      (error) => {
+        setIsRequestingPermission(false);
+        console.error('Geolocation error:', error);
+
+        if (error.code === error.PERMISSION_DENIED) {
+          // Check if permanently blocked via Permissions API
+          if (navigator.permissions) {
+            navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+              if (result.state === 'denied') {
+                setPermissionStatus('blocked');
+              } else {
+                setPermissionStatus('denied');
+              }
+            }).catch(() => setPermissionStatus('denied'));
+          } else {
+            setPermissionStatus('denied');
+          }
+        }
+        setStep('permission');
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+      }
+    );
+  }, [isRequestingPermission, toast]);
 
   const handleSelectPlace = (placeId: string) => {
     setSelectedPlaceId(placeId);
@@ -339,6 +350,58 @@ export default function Location() {
   return (
     <MobileLayout>
       <div className="p-4 space-y-4 page-fade">
+        {/* Permission request step */}
+        {step === 'permission' && (
+          <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
+            <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-6">
+              <MapPin className="h-8 w-8 text-accent" />
+            </div>
+            <h2 className="text-xl font-bold text-center mb-2">
+              {permissionStatus === 'blocked' ? 'Localização bloqueada' : 'Precisamos da sua localização'}
+            </h2>
+            <p className="text-sm text-muted-foreground text-center mb-8 max-w-[280px]">
+              {permissionStatus === 'blocked'
+                ? 'A permissão foi negada permanentemente. Abra as configurações do navegador para permitir o acesso à localização.'
+                : 'Para encontrar locais perto de você, precisamos acessar sua localização.'}
+            </p>
+
+            {permissionStatus === 'blocked' ? (
+              <Button
+                onClick={() => {
+                  // On web, we can't open system settings directly.
+                  // Guide the user instead.
+                  toast({
+                    title: 'Abra as configurações',
+                    description: 'No navegador, toque no ícone de cadeado/configurações ao lado da barra de endereço e permita a localização.',
+                  });
+                }}
+                className="w-full max-w-[280px] h-12 rounded-xl font-semibold text-base"
+                variant="outline"
+              >
+                Como permitir
+              </Button>
+            ) : (
+              <Button
+                onClick={handleRequestLocation}
+                disabled={isRequestingPermission}
+                className="w-full max-w-[280px] h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
+              >
+                {isRequestingPermission ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Solicitando...
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="h-5 w-5 mr-2" />
+                    Permitir localização
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* Detecting location */}
         {step === 'detecting' && (
           <div className="flex flex-col items-center justify-center py-16">
