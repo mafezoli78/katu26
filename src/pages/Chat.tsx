@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useChat } from '@/hooks/useChat';
 import { usePresence } from '@/hooks/usePresence';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
+import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { MobileLayout } from '@/components/layout/MobileLayout';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ConversationsList } from '@/components/chat/ConversationsList';
@@ -30,6 +31,10 @@ export default function Chat() {
     clearEndedReason,
   } = useChat({ presenceState, currentPresence });
 
+  // Unread message tracking
+  const conversationIds = activeConversations.map(c => c.id);
+  const { unreadCounts, markAsRead } = useUnreadMessages(conversationIds);
+
   useEffect(() => {
     if (!user) {
       navigate('/auth', { replace: true });
@@ -45,21 +50,19 @@ export default function Chat() {
     );
     
     if (targetConversation) {
+      markAsRead(targetConversation.id);
       openChat(targetConversation);
       // Clear query param to prevent re-triggering
       setSearchParams({}, { replace: true });
     }
-  }, [conversationIdParam, activeConversations, chatState.isActive, openChat, setSearchParams]);
+  }, [conversationIdParam, activeConversations, chatState.isActive, openChat, setSearchParams, markAsRead]);
 
   // R3: Show toast when chat ends - transition guard prevents duplicates
-  // Only fires on transition from NOT ended → ended (ref tracks previous state)
   const previousEndedRef = useRef<string | null>(null);
   
   useEffect(() => {
     const currentReason = chatState.endedReason;
     
-    // Only show toast on real transition: previous was null, current is a terminal reason
-    // "Ended by other" toast is now handled directly in useChat Realtime handler
     if (previousEndedRef.current === null && currentReason && currentReason !== 'system_suspended' && chatState.wasEndedByMe) {
       toast({
         title: 'Conversa encerrada por você',
@@ -67,10 +70,8 @@ export default function Chat() {
       });
     }
     
-    // Always sync ref to current value (prevents re-fire on Realtime re-set)
     previousEndedRef.current = currentReason;
     
-    // Reset ref when reason is cleared (prepares for next conversation)
     if (currentReason === null) {
       previousEndedRef.current = null;
     }
@@ -85,6 +86,11 @@ export default function Chat() {
         variant: 'destructive',
       });
     }
+  };
+
+  const handleOpenChat = (conversation: typeof activeConversations[0]) => {
+    markAsRead(conversation.id);
+    openChat(conversation);
   };
 
   // Show chat within MobileLayout when active
@@ -128,7 +134,8 @@ export default function Chat() {
         ) : (
           <ConversationsList
             conversations={activeConversations}
-            onSelectConversation={openChat}
+            onSelectConversation={handleOpenChat}
+            unreadCounts={unreadCounts}
           />
         )}
       </div>

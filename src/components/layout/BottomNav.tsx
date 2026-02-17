@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useWaves } from '@/hooks/useWaves';
 import { useConversations } from '@/hooks/useConversations';
+import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { HandshakeIcon } from '@/components/icons/HandshakeIcon';
 
 export function BottomNav() {
@@ -10,10 +11,12 @@ export function BottomNav() {
   const location = useLocation();
   const { unreadCount } = useWaves();
   const { conversations } = useConversations();
+  const conversationIds = conversations.map(c => c.id);
+  const { totalUnread } = useUnreadMessages(conversationIds);
 
   const navItems = [
     { icon: Home, label: 'Home', path: '/home' },
-    { icon: MessageCircle, label: 'Chat', path: '/chat', badge: conversations.length > 0 ? conversations.length : undefined },
+    { icon: MessageCircle, label: 'Chat', path: '/chat', badge: totalUnread > 0 ? totalUnread : undefined },
     { icon: HandshakeIcon, label: 'Acenos', path: '/waves', badge: unreadCount },
     { icon: User, label: 'Perfil', path: '/profile' },
   ];
