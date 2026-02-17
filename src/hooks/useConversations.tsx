@@ -110,93 +110,105 @@ export function useConversations() {
     fetchConversations();
   }, [fetchConversations]);
 
-  // Subscribe to new conversations via Realtime
-  // This ensures BOTH users get notified when a conversation is created/activated
+  // Layer 1: Polling fallback (15s) with visibility check
   useEffect(() => {
     if (!user) return;
 
-    const channel = supabase
-      .channel('new-conversations')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'conversations',
-        },
-        async (payload) => {
-          const newConv = payload.new as Conversation;
-          
-          // Check if this conversation involves the current user
-          const involvesMe = newConv.user1_id === user.id || newConv.user2_id === user.id;
-          if (!involvesMe || !newConv.ativo) return;
-          
-          // Check if we already know about this conversation (avoid duplicate toasts)
-          if (knownConversationIds.current.has(newConv.id)) {
-            console.log('[useConversations] Already knew about conversation:', newConv.id);
-            return;
-          }
-          
-          // A1 FIX: Suppress Realtime toast for the user who accepted the wave.
-          // When a wave is accepted, the acceptor (user2_id) already sees a local
-          // "Chat iniciado!" toast from Waves.tsx. Showing the Realtime toast too
-          // would be a duplicate. We only show the Realtime toast for the OTHER user
-          // (the wave sender, user1_id) who wouldn't otherwise know.
-          // NOTE: This assumption is valid as long as the accept flow is unidirectional
-          // (only para_user_id can accept, and they become user2_id in the conversation).
-          if (newConv.user2_id === user.id) {
-            console.log('[useConversations] Suppressing Realtime toast for acceptor (user2_id)');
-            knownConversationIds.current.add(newConv.id);
+    let debounceTimeout: NodeJS.Timeout;
+
+    const debouncedRefetch = () => {
+      clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(() => {
+        fetchConversations();
+      }, 500);
+    };
+
+    const intervalId = setInterval(() => {
+      if (!document.hidden) {
+        debouncedRefetch();
+      }
+    }, 15000);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(debounceTimeout);
+    };
+  }, [user, fetchConversations]);
+
+  // Layer 2: Realtime subscription for INSERT and UPDATE
+  useEffect(() => {
+    if (!user) return;
+
+    let debounceTimeout: NodeJS.Timeout;
+
+    const handleRealtimeEvent = async (eventType: string, payload: any) => {
+      const conv = payload.new as Conversation;
+      console.log(`[Realtime] ${eventType} conversation:`, conv.id);
+
+      const involvesMe = conv.user1_id === user.id || conv.user2_id === user.id;
+      if (!involvesMe) return;
+
+      // Debounce to group multiple events
+      clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(async () => {
+        // Check if truly new for toast purposes
+        if (eventType === 'INSERT' && !knownConversationIds.current.has(conv.id) && conv.ativo) {
+          knownConversationIds.current.add(conv.id);
+
+          // Suppress toast for acceptor (already shown locally)
+          if (conv.user2_id === user.id) {
+            console.log('[Realtime] Suppressing toast for acceptor');
             fetchConversations();
             return;
           }
 
-          console.log('[useConversations] New conversation detected:', newConv.id);
-          
-          // Add to known IDs immediately to prevent duplicates
-          knownConversationIds.current.add(newConv.id);
-          
-          // Fetch details for the toast
-          const otherUserId = newConv.user1_id === user.id ? newConv.user2_id : newConv.user1_id;
-          const [profileRes, placeRes] = await Promise.all([
-            supabase
-              .from('profiles')
-              .select('id, nome, foto_url')
-              .eq('id', otherUserId)
-              .single(),
-            supabase
-              .from('places')
-              .select('id, nome')
-              .eq('id', newConv.place_id)
-              .single()
-          ]);
-          
-          const otherUserName = profileRes.data?.nome || 'Alguém';
-          
-          // Show toast notification for BOTH users
+          // Show toast for wave sender
+          const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('nome')
+            .eq('id', otherUserId)
+            .single();
+
           toast({
             title: 'Chat iniciado! 🎉',
-            description: `Você agora pode conversar com ${otherUserName}`,
+            description: `Você agora pode conversar com ${profileData?.nome || 'Alguém'}`,
             action: (
-              <ToastAction 
+              <ToastAction
                 altText="Abrir conversa"
-                onClick={() => navigate(`/chat?conversationId=${newConv.id}`)}
+                onClick={() => navigate(`/chat?conversationId=${conv.id}`)}
               >
                 <MessageCircle className="h-4 w-4 mr-1" />
                 Abrir chat
               </ToastAction>
             )
           });
-          
-          // Refetch to update the list with full details
-          fetchConversations();
         }
-      )
-      .subscribe();
+
+        fetchConversations();
+      }, 500);
+    };
+
+    const channel = supabase
+      .channel('conversations-updates')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'conversations'
+      }, (payload) => handleRealtimeEvent('INSERT', payload))
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'conversations'
+      }, (payload) => handleRealtimeEvent('UPDATE', payload))
+      .subscribe((status) => {
+        console.log('[Realtime] Conversations subscription:', status);
+      });
 
     channelRef.current = channel;
 
     return () => {
+      clearTimeout(debounceTimeout);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
