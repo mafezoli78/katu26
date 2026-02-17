@@ -231,18 +231,17 @@ export function PersonCard({
         <Card className="border-0 shadow-sm overflow-hidden">
           <CardContent className="p-0">
             <div className="flex h-full">
-              {/* FOTO - selfie de check-in tem prioridade */}
+              {/* FOTO DO MOMENTO - apenas selfie de check-in */}
               <div
                 className="w-[36%] flex items-center p-2.5 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
-                  const displayPhoto = person.checkinSelfieUrl || person.profile.foto_url;
-                  if (displayPhoto) setPhotoOpen(true);
+                  if (person.checkinSelfieUrl) setPhotoOpen(true);
                 }}
               >
-                {(person.checkinSelfieUrl || person.profile.foto_url) ? (
+                {person.checkinSelfieUrl ? (
                   <img
-                    src={person.checkinSelfieUrl || person.profile.foto_url!}
+                    src={person.checkinSelfieUrl}
                     alt={person.profile.nome || ''}
                     className="w-full aspect-square object-cover rounded-lg"
                   />
@@ -281,13 +280,13 @@ export function PersonCard({
         </Card>
       </div>
 
-      {/* Modal de ampliação da foto */}
+      {/* Modal de ampliação da foto do momento */}
       <Dialog open={photoOpen} onOpenChange={setPhotoOpen}>
         <DialogContent className="max-w-3xl">
           <DialogTitle className="sr-only">Foto ampliada</DialogTitle>
-          {(person.checkinSelfieUrl || person.profile.foto_url) && (
+          {person.checkinSelfieUrl && (
             <img
-              src={person.checkinSelfieUrl || person.profile.foto_url!}
+              src={person.checkinSelfieUrl}
               alt={person.profile.nome || ''}
               className="w-full max-w-md mx-auto aspect-square object-cover rounded-lg"
             />

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { X, Send, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, AlertCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 interface ChatWindowProps {
@@ -64,13 +64,19 @@ export function ChatWindow({
       setTimeout(() => setShowEndConfirm(false), 3000);
     }
   };
+  // Foto do momento: apenas checkin_selfie_url
+  const momentPhoto = conversation.otherUser.checkin_selfie_url;
+
   return <div className="flex flex-col h-full overflow-hidden">
       {/* Header - always visible at top */}
       <div className="flex-shrink-0 flex items-center justify-between p-4 border-b bg-card">
         <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10">
-            <AvatarImage src={conversation.otherUser.foto_url || undefined} />
-            <AvatarFallback className="bg-secondary text-secondary-foreground">
+          <Button variant="ghost" size="icon" className="h-9 w-9 -ml-2" onClick={onClose}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <Avatar className="h-10 w-10 rounded-lg">
+            <AvatarImage src={momentPhoto || undefined} className="rounded-lg" />
+            <AvatarFallback className="bg-secondary text-secondary-foreground rounded-lg">
               {conversation.otherUser.nome?.[0]?.toUpperCase() || '?'}
             </AvatarFallback>
           </Avatar>
@@ -81,17 +87,12 @@ export function ChatWindow({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant={showEndConfirm ? "destructive" : "ghost"} size="sm" onClick={handleEndChat}>
-            {showEndConfirm ? <>
-                <AlertCircle className="h-4 w-4 mr-1" />
-                Confirmar
-              </> : 'Encerrar'}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+        <Button variant={showEndConfirm ? "destructive" : "ghost"} size="sm" onClick={handleEndChat}>
+          {showEndConfirm ? <>
+              <AlertCircle className="h-4 w-4 mr-1" />
+              Confirmar
+            </> : 'Encerrar'}
+        </Button>
       </div>
 
       {/* Messages - only this area scrolls */}

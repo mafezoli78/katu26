@@ -24,6 +24,7 @@ export interface ConversationWithDetails extends Conversation {
     id: string;
     nome: string | null;
     foto_url: string | null;
+    checkin_selfie_url: string | null;
   };
   place: {
     id: string;
@@ -71,7 +72,7 @@ export function useConversations() {
           continue;
         }
         
-        const [profileRes, placeRes] = await Promise.all([
+        const [profileRes, placeRes, presenceRes] = await Promise.all([
           supabase
             .from('profiles')
             .select('id, nome, foto_url')
@@ -81,13 +82,22 @@ export function useConversations() {
             .from('places')
             .select('id, nome')
             .eq('id', placeId)
-            .single()
+            .single(),
+          supabase
+            .from('presence')
+            .select('checkin_selfie_url')
+            .eq('user_id', otherUserId)
+            .eq('ativo', true)
+            .maybeSingle()
         ]);
 
         if (profileRes.data && placeRes.data) {
           conversationsWithDetails.push({
             ...conv,
-            otherUser: profileRes.data,
+            otherUser: {
+              ...profileRes.data,
+              checkin_selfie_url: presenceRes.data?.checkin_selfie_url || null,
+            },
             place: placeRes.data
           });
         } else if (profileRes.data && !placeRes.data) {
