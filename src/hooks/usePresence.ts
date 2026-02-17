@@ -576,6 +576,39 @@ export function usePresence() {
     stopGPSMonitoring();
 
     try {
+      // DEFENSIVE CLEANUP: Explicitly end previous presence before RPC
+      // This is a safety net — the RPC also does this atomically, but if it fails
+      // silently (network timeout, partial error), this ensures cleanup happened.
+      try {
+        console.log('[Presence] 🧹 Defensive cleanup: deactivating previous presence...');
+        const { error: cleanupPresenceError } = await supabase
+          .from('presence')
+          .update({ ativo: false, ultima_atividade: new Date().toISOString() })
+          .eq('user_id', user.id)
+          .eq('ativo', true);
+
+        if (cleanupPresenceError) {
+          console.warn('[Presence] ⚠️ Defensive presence cleanup failed (non-blocking):', cleanupPresenceError);
+        } else {
+          console.log('[Presence] 🧹 Defensive presence cleanup succeeded');
+        }
+
+        console.log('[Presence] 🧹 Defensive cleanup: expiring pending waves...');
+        const { error: cleanupWavesError } = await supabase
+          .from('waves')
+          .update({ status: 'expired' })
+          .or(`de_user_id.eq.${user.id},para_user_id.eq.${user.id}`)
+          .eq('status', 'pending');
+
+        if (cleanupWavesError) {
+          console.warn('[Presence] ⚠️ Defensive waves cleanup failed (non-blocking):', cleanupWavesError);
+        } else {
+          console.log('[Presence] 🧹 Defensive waves cleanup succeeded');
+        }
+      } catch (cleanupErr) {
+        console.warn('[Presence] ⚠️ Defensive cleanup threw (non-blocking):', cleanupErr);
+      }
+
       // Call centralized RPC - handles all cleanup atomically with advisory lock
       const { data: newPresenceId, error } = await supabase.rpc('activate_presence', {
         p_user_id: user.id,
