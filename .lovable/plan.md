@@ -1,66 +1,283 @@
-# Correção: Listener gap no useToast
-
-## Problema
-
-O hook `useToast` re-registra o listener a cada mudança de estado do toast, criando janelas onde nenhum listener está ativo. Com `TOAST_REMOVE_DELAY = 5000`, essas janelas ocorrem com frequência suficiente para coincidir com toasts disparados via Realtime.
-
-## Correção
-
-Alterar **uma única linha** em `src/hooks/use-toast.ts`:
-
-- Linha 177: mudar `}, [state]);` para `}, []);`
-
-Isso faz o listener ser registrado uma vez no mount e removido no unmount, sem gaps intermediários.
-
-## Arquivo alterado
 
 
-| Arquivo                  | Mudanca                                       |
-| ------------------------ | --------------------------------------------- |
-| `src/hooks/use-toast.ts` | Dependencia do useEffect: `[state]` para `[]` |
+Correção: Chat não aparece para remetente do wave
 
+Diagnóstico
 
-## Impacto
+O fluxo atual depende 100% do Supabase Realtime + RLS para notificar o remetente (user1_id) sobre a nova conversa. O problema ocorre porque:
 
-- Zero mudanca em logica de negocio
-- Zero mudanca em duracao, delay ou limite de toasts
-- Corrige todos os toasts Realtime (ignore cooldown, aceno recebido, chat encerrado)
-- Nao afeta toasts disparados por acao direta do usuario (esses ja funcionam porque o dispatch acontece fora do gap)
+- A subscription Realtime escuta INSERTs na tabela conversations sem filtro, dependendo do RLS para rotear eventos
 
-## Validações técnicas obrigatórias
+- O Supabase Realtime com RLS pode ter atrasos ou falhas silenciosas na entrega de eventos para o segundo participante
 
-1. Confirmar que o listener registrado dentro do useEffect NÃO depende de variáveis mutáveis do escopo (ex: state, toasts, count, etc).
+- Não existe fallback — se o evento não chegar, o usuário só vê o chat ao recarregar
 
-   - O callback deve utilizar apenas referências estáveis, como `setState`.
+Solução
 
-2. Confirmar que o cleanup do useEffect remove corretamente o listener da lista global.
+Três camadas de proteção para garantir que ambos os usuários vejam a conversa imediatamente:
 
-3. Testar em ambiente com React StrictMode ativo para garantir que não há registro duplicado de listener durante mounts/desmounts duplos.
+1. Polling de segurança (fallback otimizado)
 
-## Risco de regressao
+Adicionar um intervalo de refetch a cada 15 segundos em useConversations.tsx (em vez de 10s para reduzir custo de API). Implementar com:
 
-Baixo, desde que:
+- Debounce para evitar refetches simultâneos
 
-- O listener nao utilize variaveis mutaveis do escopo.
+- Pausa automática quando tab do navegador está inativa (usando Page Visibility API)
 
-- O cleanup do useEffect remova corretamente o listener.
+- Cleanup adequado no unmount
 
-- Nao haja multiplos registros em StrictMode.
+2. Melhorar a subscription Realtime
 
-A alteracao corrige um problema estrutural de re-registro desnecessario, mas exige validacao funcional apos implementacao.
+Manter a subscription sem filtro (já que precisamos capturar tanto user1_id quanto user2_id), mas:
+
+- Escutar eventos INSERT e UPDATE explicitamente (não usar '*')
+
+- Adicionar filtro no handler para verificar se usuário atual está envolvido (user1_id OU user2_id)
+
+- Adicionar debounce de 500ms antes de refetch para agrupar eventos múltiplos
+
+- Adicionar logs claros para debug
+
+- Garantir cleanup correto da subscription
+
+3. Tratamento de duplicatas
+
+Adicionar lógica para evitar adicionar a mesma conversa múltiplas vezes na lista.
+
+Mudanças técnicas
+
+Arquivo: src/hooks/useConversations.tsx
+
+Implementação detalhada:
+
+// 1. Polling fallback com otimizações
+
+useEffect(() => {
+
+  let intervalId: NodeJS.Timeout;
+
+  let debounceTimeout: NodeJS.Timeout;
+
+  
+
+  // Função de refetch com debounce
+
+  const debouncedRefetch = () => {
+
+    clearTimeout(debounceTimeout);
+
+    debounceTimeout = setTimeout(() => {
+
+      fetchConversations();
+
+    }, 500);
+
+  };
+
+  
+
+  // Polling a cada 15 segundos
+
+  intervalId = setInterval(() => {
+
+    // Só faz polling se tab está ativa
+
+    if (!document.hidden) {
+
+      debouncedRefetch();
+
+    }
+
+  }, 15000);
+
+  
+
+  // Cleanup
+
+  return () => {
+
+    clearInterval(intervalId);
+
+    clearTimeout(debounceTimeout);
+
+  };
+
+}, [userId]);
+
+// 2. Subscription Realtime melhorada
+
+useEffect(() => {
+
+  if (!userId) return;
+
+  
+
+  let debounceTimeout: NodeJS.Timeout;
+
+  
+
+  const channel = supabase
+
+    .channel('conversations-updates')
+
+    .on('postgres_changes', {
+
+      event: 'INSERT',
+
+      schema: 'public',
+
+      table: 'conversations'
+
+    }, (payload) => {
+
+      console.log('[Realtime] INSERT conversation:', [payload.new](http://payload.new));
+
+      
+
+      // Filtrar: só refetch se usuário atual está envolvido
+
+      const conv = [payload.new](http://payload.new);
+
+      if (conv.user1_id === userId || conv.user2_id === userId) {
+
+        // Debounce para agrupar eventos múltiplos
+
+        clearTimeout(debounceTimeout);
+
+        debounceTimeout = setTimeout(() => {
+
+          fetchConversations();
+
+        }, 500);
+
+      }
+
+    })
+
+    .on('postgres_changes', {
+
+      event: 'UPDATE',
+
+      schema: 'public',
+
+      table: 'conversations'
+
+    }, (payload) => {
+
+      console.log('[Realtime] UPDATE conversation:', [payload.new](http://payload.new));
+
+      
+
+      // Filtrar: só refetch se usuário atual está envolvido
+
+      const conv = [payload.new](http://payload.new);
+
+      if (conv.user1_id === userId || conv.user2_id === userId) {
+
+        clearTimeout(debounceTimeout);
+
+        debounceTimeout = setTimeout(() => {
+
+          fetchConversations();
+
+        }, 500);
+
+      }
+
+    })
+
+    .subscribe((status) => {
+
+      console.log('[Realtime] Subscription status:', status);
+
+    });
+
+  
+
+  // Cleanup
+
+  return () => {
+
+    clearTimeout(debounceTimeout);
+
+    supabase.removeChannel(channel);
+
+  };
+
+}, [userId]);
+
+// 3. Tratamento de duplicatas no fetchConversations
+
+const fetchConversations = async () => {
+
+  // ... código existente de fetch ...
+
+  
+
+  // Ao atualizar estado, remover duplicatas por conversation_id
+
+  setConversations(prev => {
+
+    const newConvs = [...prev, ...fetchedConversations];
+
+    const uniqueConvs = Array.from(
+
+      new Map([newConvs.map](http://newConvs.map)(c => [[c.id](http://c.id), c])).values()
+
+    );
+
+    return uniqueConvs;
+
+  });
+
+};
+
+Detalhes de implementação:
+
+1. Polling fallback:
+
+   - Intervalo de 15 segundos (balanceio entre responsividade e custo)
+
+   - Debounce de 500ms para evitar refetches simultâneos
+
+   - Verifica document.hidden para pausar quando tab inativa
+
+   - Cleanup adequado de intervalos e timeouts
+
+2. Subscription Realtime:
+
+   - Escuta explicitamente INSERT e UPDATE (não usar event: '*')
+
+   - Filtro no handler: verifica se user1_id === userId || user2_id === userId
+
+   - Debounce de 500ms para agrupar eventos múltiplos
+
+   - Logs claros para debug
+
+   - Cleanup adequado da subscription e timeouts
+
+3. Tratamento de duplicatas:
+
+   - Usar Map para remover duplicatas por conversation_id
+
+   - Garantir que mesma conversa não apareça múltiplas vezes
+
+Nenhuma mudança no banco
+
+As RLS policies da tabela conversations já permitem SELECT para ambos user1_id e user2_id. O Realtime já está habilitado para a tabela. O problema é de confiabilidade na entrega, não de permissão.
+
+Resultado esperado
+
+Quando um wave é aceito, o chat aparece na lista de conversas de ambos os usuários em:
+
+- 1-2 segundos via Realtime (cenário ideal)
+
+- Até 15 segundos via polling fallback (se Realtime falhar)
+
+- Sem necessidade de refresh manual
+
+- Sem duplicatas na lista
+
+- Sem refetches excessivos (otimizado com debounce)
 
 &nbsp;
-
-## Validacao funcional apos implementação
-
-Confirmar manualmente:
-
-- Toast manual continua funcionando.
-
-- Toast disparado via Realtime volta a aparecer.
-
-- Nenhum toast duplica.
-
-- Nenhum toast desaparece instantaneamente.
-
-- Nenhum erro aparece no console.
