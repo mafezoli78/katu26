@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Navigation, Loader2, Users, Clock, Search, Plus, Check, X, UtensilsCrossed, Coffee, Beer, Music, ShoppingBag, Dumbbell, Briefcase, Building2, Store } from 'lucide-react';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { MapPin, Navigation, Loader2, Users, Clock, Search, Plus, Check, X, UtensilsCrossed, Coffee, Beer, Music, ShoppingBag, Dumbbell, Briefcase, Building2, Store, List, Map } from 'lucide-react';
 import { TemporaryPlaceIcon } from '@/components/icons/TemporaryPlaceIcon';
 import { Place, PROXIMITY_THRESHOLD_METERS } from '@/services/placesService';
 import { NearbyTemporaryPlace } from '@/hooks/usePresence';
+import { supabase } from '@/integrations/supabase/client';
+
+const PlaceMap = lazy(() => import('@/components/location/PlaceMap'));
+
 interface PlaceSelectorProps {
   loading: boolean;
   places: Place[];
@@ -16,6 +21,7 @@ interface PlaceSelectorProps {
   onSearchByName: (query: string) => void;
   searchingByName: boolean;
   presenceRadius: number;
+  userCoords: { lat: number; lng: number } | null;
 }
 
 // Map category to icon
@@ -67,10 +73,30 @@ export function PlaceSelector({
   onCreateTemporary,
   onSearchByName,
   searchingByName,
-  presenceRadius
+  presenceRadius,
+  userCoords,
 }: PlaceSelectorProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showList, setShowList] = useState(!closestPlace);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [tempPlacesCoords, setTempPlacesCoords] = useState<{ id: string; latitude: number; longitude: number }[]>([]);
+
+  // Fetch coords for temporary places (RPC doesn't return them)
+  useEffect(() => {
+    if (temporaryPlaces.length === 0) {
+      setTempPlacesCoords([]);
+      return;
+    }
+    const ids = temporaryPlaces.map(tp => tp.id);
+    supabase
+      .from('places')
+      .select('id, latitude, longitude')
+      .in('id', ids)
+      .then(({ data }) => {
+        if (data) setTempPlacesCoords(data);
+      });
+  }, [temporaryPlaces]);
+
   const handleSearch = () => {
     if (searchQuery.trim()) {
       onSearchByName(searchQuery.trim());
@@ -128,17 +154,36 @@ export function PlaceSelector({
       </div>;
   }
 
-  // Show full list
+  // Show full list or map
   return <div className="space-y-4 animate-fade-in">
-      <div className="mb-2">
+      <div className="flex items-center justify-between mb-2">
         <h2 className="text-2xl font-bold text-foreground">Onde você está agora?</h2>
-        
+        {userCoords && (
+          <ToggleGroup type="single" value={viewMode} onValueChange={(v) => v && setViewMode(v as 'list' | 'map')} size="sm" className="bg-muted rounded-lg p-0.5">
+            <ToggleGroupItem value="list" aria-label="Lista" className="rounded-md px-3 data-[state=on]:bg-card data-[state=on]:shadow-sm">
+              <List className="h-4 w-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="map" aria-label="Mapa" className="rounded-md px-3 data-[state=on]:bg-card data-[state=on]:shadow-sm">
+              <Map className="h-4 w-4" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+        )}
       </div>
 
       {loading ? <div className="text-center py-12">
           <Loader2 className="h-10 w-10 animate-spin mx-auto text-katu-blue" />
           <p className="text-sm text-muted-foreground mt-4">Buscando locais próximos...</p>
-        </div> : <div className="space-y-4">
+        </div> : viewMode === 'map' && userCoords ? (
+          <Suspense fallback={<div className="text-center py-12"><Loader2 className="h-10 w-10 animate-spin mx-auto text-katu-blue" /></div>}>
+            <PlaceMap
+              places={places}
+              temporaryPlaces={temporaryPlaces}
+              temporaryPlacesCoords={tempPlacesCoords}
+              userCoords={userCoords}
+              onSelectPlace={onSelectPlace}
+            />
+          </Suspense>
+        ) : <div className="space-y-4">
           {/* Temporary Places Section (prioritized) */}
           {temporaryPlaces.length > 0 && <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium px-1">

@@ -422,6 +422,7 @@ export default function Location() {
             onSearchByName={handleSearchByName}
             searchingByName={searchingByName}
             presenceRadius={presenceRadiusMeters}
+            userCoords={userCoords}
           />
         )}
 
