@@ -8,10 +8,11 @@ type Step = 'explain' | 'capture' | 'preview';
 interface CheckinSelfieProps {
   onConfirm: (imageBlob: Blob) => void;
   onCancel: () => void;
+  onSkip?: () => void; // TODO: REMOVE BEFORE PRODUCTION
   uploading?: boolean;
 }
 
-export function CheckinSelfie({ onConfirm, onCancel, uploading }: CheckinSelfieProps) {
+export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: CheckinSelfieProps) {
   const [step, setStep] = useState<Step>('explain');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
@@ -165,8 +166,19 @@ export function CheckinSelfie({ onConfirm, onCancel, uploading }: CheckinSelfieP
 
           <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black">
             {cameraError ? (
-              <div className="absolute inset-0 flex items-center justify-center p-6">
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 gap-4">
                 <p className="text-white text-center">{cameraError}</p>
+                {/* TODO: REMOVE BEFORE PRODUCTION - Skip selfie for dev testing */}
+                {onSkip && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-white border-white/30 hover:bg-white/10 text-xs opacity-60"
+                    onClick={() => { stopCamera(); onSkip(); }}
+                  >
+                    Pular selfie (Modo Teste)
+                  </Button>
+                )}
               </div>
             ) : (
               <video

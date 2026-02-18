@@ -585,6 +585,8 @@ export default function Location() {
             onConfirm={handleSelfieConfirm}
             onCancel={handleSelfieCancel}
             uploading={activating}
+            // TODO: REMOVE BEFORE PRODUCTION - Skip selfie for dev testing
+            onSkip={() => handleActivatePresence('https://ui-avatars.com/api/?name=Test&background=1E8FD3&color=fff&size=256')}
           />
         )}
       </div>
