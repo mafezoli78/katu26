@@ -1,3 +1,5 @@
+@import 'leaflet/dist/leaflet.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -206,4 +208,112 @@
     box-shadow: inherit;
     transform: none;
   }
+}
+
+/* ===== Leaflet Map Styles ===== */
+
+/* User location pulsing blue dot */
+.leaflet-user-location {
+  background: none !important;
+  border: none !important;
+}
+
+.user-dot {
+  width: 14px;
+  height: 14px;
+  background: hsl(200 81% 47%);
+  border-radius: 50%;
+  border: 3px solid white;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+.user-dot-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  margin-left: -20px;
+  border-radius: 50%;
+  background: hsl(200 81% 47% / 0.25);
+  animation: userPulse 2s ease-out infinite;
+}
+
+@keyframes userPulse {
+  0% { transform: scale(0.3); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+/* Place pins */
+.leaflet-place-pin {
+  background: none !important;
+  border: none !important;
+}
+
+.place-pin {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  line-height: 1;
+}
+
+.place-pin.pin-active {
+  background: hsl(200 81% 47%); /* katu-blue */
+}
+
+.place-pin.pin-empty {
+  background: hsl(0 0% 70%);
+  color: hsl(0 0% 30%);
+}
+
+.place-pin.pin-temporary {
+  background: hsl(165 52% 51%); /* katu-green */
+}
+
+/* Popup styling */
+.leaflet-popup-katuu .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.leaflet-popup-katuu .leaflet-popup-content {
+  margin: 0;
+}
+
+.leaflet-popup-katuu .leaflet-popup-tip {
+  box-shadow: none;
+}
+
+/* Recenter button */
+.leaflet-recenter-btn {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1000;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: white;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: hsl(200 81% 47%);
+}
+
+.leaflet-recenter-btn:active {
+  transform: scale(0.95);
 }
