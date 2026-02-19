@@ -1,9 +1,9 @@
-import { useEffect, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Locate, Users } from 'lucide-react';
+import { Locate, Users, Loader2 } from 'lucide-react';
 import { Place } from '@/services/placesService';
 import { NearbyTemporaryPlace } from '@/hooks/usePresence';
 
@@ -32,6 +32,46 @@ function RecenterButton({ userCoords }: { userCoords: { lat: number; lng: number
     >
       <Locate className="h-5 w-5" />
     </button>
+  );
+}
+
+// Tile loading overlay - shows spinner while tiles load
+function TileLoadingOverlay() {
+  const [loading, setLoading] = useState(true);
+  const map = useMap();
+
+  useEffect(() => {
+    const onLoading = () => setLoading(true);
+    const onLoad = () => setLoading(false);
+
+    map.on('loading', onLoading);
+    map.on('load', onLoad);
+
+    // Also listen for initial tile load
+    const tileLayer = Object.values((map as any)._layers).find(
+      (l: any) => l._url
+    ) as any;
+    if (tileLayer) {
+      tileLayer.on('loading', onLoading);
+      tileLayer.on('load', onLoad);
+    }
+
+    return () => {
+      map.off('loading', onLoading);
+      map.off('load', onLoad);
+      if (tileLayer) {
+        tileLayer.off('loading', onLoading);
+        tileLayer.off('load', onLoad);
+      }
+    };
+  }, [map]);
+
+  if (!loading) return null;
+
+  return (
+    <div className="absolute inset-0 z-[500] flex items-center justify-center bg-background/40 pointer-events-none">
+      <Loader2 className="h-8 w-8 animate-spin text-katu-blue" />
+    </div>
   );
 }
 
@@ -79,7 +119,7 @@ export default function PlaceMap({
   }, [temporaryPlacesCoords]);
 
   return (
-    <div className="relative rounded-xl overflow-hidden border border-border" style={{ height: 'calc(100vh - 200px)' }}>
+    <div className="relative rounded-xl overflow-hidden border border-border h-full" style={{ position: 'relative', zIndex: 0 }}>
       <MapContainer
         center={[userCoords.lat, userCoords.lng]}
         zoom={16}
@@ -93,6 +133,8 @@ export default function PlaceMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
           detectRetina={true}
         />
+
+        <TileLoadingOverlay />
 
         {/* User location */}
         <UserLocationMarker coords={userCoords} />

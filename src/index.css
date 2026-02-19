@@ -212,6 +212,11 @@
 
 /* ===== Leaflet Map Styles ===== */
 
+/* Isolate Leaflet z-index from fixed header/nav */
+.leaflet-container {
+  z-index: 0 !important;
+}
+
 /* User location pulsing blue dot */
 .leaflet-user-location {
   background: none !important;
