@@ -19,30 +19,30 @@ export default function Location() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { 
-    intentions, 
+  const {
+    intentions,
     nearbyTemporaryPlaces,
     fetchNearbyTemporaryPlaces,
     activatePresenceAtPlace,
     createTemporaryPlace,
     loading,
     presenceRadiusMeters,
-    currentPresence,
+    currentPresence
   } = usePresence();
 
   const [step, setStep] = useState<'permission' | 'detecting' | 'select' | 'create_temp' | 'confirm_temp' | 'expression' | 'selfie'>('permission');
   const [permissionStatus, setPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'blocked'>('prompt');
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [userCoords, setUserCoords] = useState<{lat: number;lng: number;} | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [newPlaceName, setNewPlaceName] = useState('');
   const [activating, setActivating] = useState(false);
   const [expressionText, setExpressionText] = useState('');
-  
+
   // Default intention: "Livre" (aberto a qualquer interação)
   const DEFAULT_INTENTION_ID = '8302ef7d-e40e-494f-9ea3-7cfb52730bb2';
   const [nearbyTempToConfirm, setNearbyTempToConfirm] = useState<NearbyTemporaryPlace | null>(null);
-  
+
   // New states for optimized flow
   const [places, setPlaces] = useState<Place[]>([]);
   const [placesLoading, setPlacesLoading] = useState(false);
@@ -54,18 +54,18 @@ export default function Location() {
   const fetchPlacesRef = useRef<((lat: number, lng: number) => Promise<void>) | null>(null);
   const fetchPlaces = useCallback(async (lat: number, lng: number) => {
     setPlacesLoading(true);
-    
+
     try {
       // Fetch temporary places first
       await fetchNearbyTemporaryPlaces(lat, lng);
-      
+
       // Step 1: Initial search with 300m radius
       console.log(`[Location] 🔍 Searching with initial radius: ${INITIAL_SEARCH_RADIUS_METERS}m`);
       let results = await placesService.searchNearby({
         latitude: lat,
         longitude: lng,
         radius: INITIAL_SEARCH_RADIUS_METERS,
-        limit: 20,
+        limit: 20
       });
       console.log(`[Location] Found ${results.length} places at ${INITIAL_SEARCH_RADIUS_METERS}m`);
 
@@ -76,7 +76,7 @@ export default function Location() {
           latitude: lat,
           longitude: lng,
           radius: EXPANDED_SEARCH_RADIUS_METERS,
-          limit: 20,
+          limit: 20
         });
         console.log(`[Location] Found ${results.length} places at ${EXPANDED_SEARCH_RADIUS_METERS}m`);
 
@@ -87,7 +87,7 @@ export default function Location() {
             latitude: lat,
             longitude: lng,
             radius: MAX_SEARCH_RADIUS_METERS,
-            limit: 20,
+            limit: 20
           });
           console.log(`[Location] Found ${results.length} places at ${MAX_SEARCH_RADIUS_METERS}m (max)`);
         }
@@ -109,7 +109,7 @@ export default function Location() {
       toast({
         variant: 'destructive',
         title: 'Erro ao buscar locais',
-        description: 'Tente novamente',
+        description: 'Tente novamente'
       });
     } finally {
       setPlacesLoading(false);
@@ -146,10 +146,10 @@ export default function Location() {
         // We do NOT set 'blocked' here because many mobile browsers report 'denied'
         // even when the user has never been asked.
       }).catch(() => {
+
+
         // Permissions API not supported, stay on permission screen
-      });
-    }
-  }, [user, navigate, loading, currentPresence]);
+      });}}, [user, navigate, loading, currentPresence]);
 
   // Explicit handler: user taps "Permitir localização"
   const handleRequestLocation = useCallback(() => {
@@ -200,7 +200,7 @@ export default function Location() {
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 30000,
+        maximumAge: 30000
       }
     );
   }, [isRequestingPermission, toast]);
@@ -212,14 +212,14 @@ export default function Location() {
 
   const handleSearchByName = async (query: string) => {
     if (!userCoords) return;
-    
+
     setSearchingByName(true);
     try {
       const results = await placesService.searchByName({
         latitude: userCoords.lat,
         longitude: userCoords.lng,
         query,
-        limit: 20,
+        limit: 20
       });
       setPlaces(results);
       setClosestPlace(null); // Reset closest place suggestion
@@ -228,7 +228,7 @@ export default function Location() {
       toast({
         variant: 'destructive',
         title: 'Erro na busca',
-        description: 'Tente novamente',
+        description: 'Tente novamente'
       });
     } finally {
       setSearchingByName(false);
@@ -243,7 +243,7 @@ export default function Location() {
 
     // Check for nearby temporary places first
     const nearbyTemp = await fetchNearbyTemporaryPlaces(userCoords.lat, userCoords.lng);
-    
+
     if (nearbyTemp.length > 0) {
       // Found nearby temporary place - ask user to confirm
       setNearbyTempToConfirm(nearbyTemp[0]); // Show the closest one
@@ -270,7 +270,7 @@ export default function Location() {
 
   const handleActivatePresence = async (selfieUrl?: string) => {
     setActivating(true);
-    
+
     try {
       let error: Error | null = null;
       const trimmedExpression = expressionText.trim() || undefined;
@@ -296,14 +296,14 @@ export default function Location() {
       } else {
         // Update presence with selfie URL if provided
         if (selfieUrl && user) {
-          await supabase
-            .from('presence')
-            .update({ 
-              checkin_selfie_url: selfieUrl,
-              checkin_selfie_created_at: new Date().toISOString()
-            })
-            .eq('user_id', user.id)
-            .eq('ativo', true);
+          await supabase.
+          from('presence').
+          update({
+            checkin_selfie_url: selfieUrl,
+            checkin_selfie_created_at: new Date().toISOString()
+          }).
+          eq('user_id', user.id).
+          eq('ativo', true);
         }
         navigate('/home', { replace: true });
       }
@@ -321,9 +321,9 @@ export default function Location() {
     try {
       // Upload selfie to storage
       const fileName = `${user.id}/${Date.now()}.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from('checkin-selfies')
-        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+      const { error: uploadError } = await supabase.storage.
+      from('checkin-selfies').
+      upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
 
       if (uploadError) {
         toast({ variant: 'destructive', title: 'Erro ao enviar foto' });
@@ -331,9 +331,9 @@ export default function Location() {
         return;
       }
 
-      const { data: urlData } = supabase.storage
-        .from('checkin-selfies')
-        .getPublicUrl(fileName);
+      const { data: urlData } = supabase.storage.
+      from('checkin-selfies').
+      getPublicUrl(fileName);
 
       // Activate presence with selfie URL
       await handleActivatePresence(urlData.publicUrl);
@@ -351,8 +351,8 @@ export default function Location() {
     <MobileLayout>
       <div className="p-4 space-y-4 page-fade">
         {/* Permission request step */}
-        {step === 'permission' && (
-          <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
+        {step === 'permission' &&
+        <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
             <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-6">
               <MapPin className="h-8 w-8 text-accent" />
             </div>
@@ -360,82 +360,82 @@ export default function Location() {
               {permissionStatus === 'blocked' ? 'Localização bloqueada' : 'Precisamos da sua localização'}
             </h2>
             <p className="text-sm text-muted-foreground text-center mb-8 max-w-[280px]">
-              {permissionStatus === 'blocked'
-                ? 'A permissão foi negada permanentemente. Abra as configurações do navegador para permitir o acesso à localização.'
-                : 'Para encontrar locais perto de você, precisamos acessar sua localização.'}
+              {permissionStatus === 'blocked' ?
+            'A permissão foi negada permanentemente. Abra as configurações do navegador para permitir o acesso à localização.' :
+            'Para encontrar locais perto de você, precisamos acessar sua localização.'}
             </p>
 
-            {permissionStatus === 'blocked' ? (
-              <Button
-                onClick={() => {
-                  // On web, we can't open system settings directly.
-                  // Guide the user instead.
-                  toast({
-                    title: 'Abra as configurações',
-                    description: 'No navegador, toque no ícone de cadeado/configurações ao lado da barra de endereço e permita a localização.',
-                  });
-                }}
-                className="w-full max-w-[280px] h-12 rounded-xl font-semibold text-base"
-                variant="outline"
-              >
+            {permissionStatus === 'blocked' ?
+          <Button
+            onClick={() => {
+              // On web, we can't open system settings directly.
+              // Guide the user instead.
+              toast({
+                title: 'Abra as configurações',
+                description: 'No navegador, toque no ícone de cadeado/configurações ao lado da barra de endereço e permita a localização.'
+              });
+            }}
+            className="w-full max-w-[280px] h-12 rounded-xl font-semibold text-base"
+            variant="outline">
+
                 Como permitir
-              </Button>
-            ) : (
-              <Button
-                onClick={handleRequestLocation}
-                disabled={isRequestingPermission}
-                className="w-full max-w-[280px] h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
-              >
-                {isRequestingPermission ? (
-                  <>
+              </Button> :
+
+          <Button
+            onClick={handleRequestLocation}
+            disabled={isRequestingPermission}
+            className="w-full max-w-[280px] h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base">
+
+                {isRequestingPermission ?
+            <>
                     <Loader2 className="h-5 w-5 mr-2 animate-spin" />
                     Solicitando...
-                  </>
-                ) : (
-                  <>
+                  </> :
+
+            <>
                     <MapPin className="h-5 w-5 mr-2" />
                     Permitir localização
                   </>
-                )}
+            }
               </Button>
-            )}
+          }
           </div>
-        )}
+        }
 
         {/* Detecting location */}
-        {step === 'detecting' && (
-          <div className="flex flex-col items-center justify-center py-16">
+        {step === 'detecting' &&
+        <div className="flex flex-col items-center justify-center py-16">
             <Loader2 className="h-12 w-12 text-katu-blue mx-auto mb-4 animate-spin" />
             <p className="text-muted-foreground">Detectando sua localização...</p>
           </div>
-        )}
+        }
 
         {/* Select location - New optimized component */}
-        {step === 'select' && (
-          <PlaceSelector
-            loading={loading || placesLoading}
-            places={places}
-            temporaryPlaces={nearbyTemporaryPlaces}
-            closestPlace={closestPlace}
-            onSelectPlace={handleSelectPlace}
-            onCreateTemporary={() => setStep('create_temp')}
-            onSearchByName={handleSearchByName}
-            searchingByName={searchingByName}
-            presenceRadius={presenceRadiusMeters}
-            userCoords={userCoords}
-          />
-        )}
+        {step === 'select' &&
+        <PlaceSelector
+          loading={loading || placesLoading}
+          places={places}
+          temporaryPlaces={nearbyTemporaryPlaces}
+          closestPlace={closestPlace}
+          onSelectPlace={handleSelectPlace}
+          onCreateTemporary={() => setStep('create_temp')}
+          onSearchByName={handleSearchByName}
+          searchingByName={searchingByName}
+          presenceRadius={presenceRadiusMeters}
+          userCoords={userCoords} />
+
+        }
 
         {/* Create temporary place */}
-        {step === 'create_temp' && (
-          <div className="space-y-4 animate-fade-in">
+        {step === 'create_temp' &&
+        <div className="space-y-4 animate-fade-in">
             <div className="flex items-center gap-3 mb-2">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-9 w-9 rounded-xl"
-                onClick={() => setStep('select')}
-              >
+              <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl"
+              onClick={() => setStep('select')}>
+
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
@@ -451,28 +451,28 @@ export default function Location() {
                 <div>
                   <Label htmlFor="placeName" className="text-sm font-medium">Nome do local</Label>
                   <Input
-                    id="placeName"
-                    placeholder="Ex: Festa do João, Churrasco no parque..."
-                    value={newPlaceName}
-                    onChange={(e) => setNewPlaceName(e.target.value)}
-                    className="mt-2 h-11 rounded-xl"
-                  />
+                  id="placeName"
+                  placeholder="Ex: Festa do João, Churrasco no parque..."
+                  value={newPlaceName}
+                  onChange={(e) => setNewPlaceName(e.target.value)}
+                  className="mt-2 h-11 rounded-xl" />
+
                 </div>
-                <Button 
-                  onClick={handleCreateTemporaryPlace}
-                  disabled={!newPlaceName.trim()}
-                  className="w-full h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
-                >
+                <Button
+                onClick={handleCreateTemporaryPlace}
+                disabled={!newPlaceName.trim()}
+                className="w-full h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
+
                   Continuar
                 </Button>
               </CardContent>
             </Card>
           </div>
-        )}
+        }
 
         {/* Confirm use of existing temporary place */}
-        {step === 'confirm_temp' && nearbyTempToConfirm && (
-          <div className="space-y-4 animate-fade-in">
+        {step === 'confirm_temp' && nearbyTempToConfirm &&
+        <div className="space-y-4 animate-fade-in">
             <div className="text-center mb-4">
               <h2 className="text-xl font-bold">Local temporário próximo</h2>
               <p className="text-sm text-muted-foreground mt-1">
@@ -493,53 +493,53 @@ export default function Location() {
                 </div>
 
                 <div className="flex flex-col gap-2 mt-4">
-                  <Button 
-                    onClick={handleConfirmUseExistingTemp}
-                    className="h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
-                  >
+                  <Button
+                  onClick={handleConfirmUseExistingTemp}
+                  className="h-11 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
+
                     Entrar neste local
                   </Button>
-                  <Button 
-                    variant="outline"
-                    className="h-11 rounded-xl"
-                    onClick={handleConfirmCreateNewTemp}
-                  >
+                  <Button
+                  variant="outline"
+                  className="h-11 rounded-xl"
+                  onClick={handleConfirmCreateNewTemp}>
+
                     Criar outro local mesmo assim
                   </Button>
-                  <Button 
-                    variant="ghost"
-                    className="h-11 rounded-xl"
-                    onClick={() => {
-                      setNearbyTempToConfirm(null);
-                      setStep('select');
-                    }}
-                  >
+                  <Button
+                  variant="ghost"
+                  className="h-11 rounded-xl"
+                  onClick={() => {
+                    setNearbyTempToConfirm(null);
+                    setStep('select');
+                  }}>
+
                     Voltar
                   </Button>
                 </div>
               </CardContent>
             </Card>
           </div>
-        )}
+        }
 
         {/* Expression screen - momentary expression */}
-        {step === 'expression' && (
-          <div className="space-y-4 animate-fade-in">
+        {step === 'expression' &&
+        <div className="space-y-4 animate-fade-in">
             <div className="flex items-center gap-3 mb-2">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-9 w-9 rounded-xl"
-                onClick={() => {
-                  if (nearbyTempToConfirm) {
-                    setStep('confirm_temp');
-                  } else if (newPlaceName.trim()) {
-                    setStep('create_temp');
-                  } else {
-                    setStep('select');
-                  }
-                }}
-              >
+              <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl"
+              onClick={() => {
+                if (nearbyTempToConfirm) {
+                  setStep('confirm_temp');
+                } else if (newPlaceName.trim()) {
+                  setStep('create_temp');
+                } else {
+                  setStep('select');
+                }
+              }}>
+
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
@@ -550,46 +550,46 @@ export default function Location() {
             <Card className="border-0 shadow-sm">
               <CardContent className="pt-6 space-y-5">
                 <div>
-                  <p className="text-base text-foreground mb-1">
-                    O que faz sentido pra você agora?
-                  </p>
+                  <p className="text-base text-foreground mb-1">O que as pessoas precisam saber sobre você aqui e agora?
+
+                </p>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Opcional
-                  </p>
+
+                </p>
                   <Textarea
-                    placeholder="Ex: Aberto a conversar."
-                    value={expressionText}
-                    onChange={(e) => setExpressionText(e.target.value.slice(0, 140))}
-                    className="min-h-[100px] rounded-xl resize-none"
-                    maxLength={140}
-                  />
+                  placeholder="Ex: Aberto a conversar."
+                  value={expressionText}
+                  onChange={(e) => setExpressionText(e.target.value.slice(0, 140))}
+                  className="min-h-[100px] rounded-xl resize-none"
+                  maxLength={140} />
+
                   <p className="text-xs text-muted-foreground text-right mt-1">
                     {expressionText.length}/140
                   </p>
                 </div>
 
-                <Button 
-                  onClick={() => setStep('selfie')}
-                  className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
-                >
+                <Button
+                onClick={() => setStep('selfie')}
+                className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base">
+
                   Continuar
                 </Button>
               </CardContent>
             </Card>
           </div>
-        )}
+        }
 
         {/* Selfie step */}
-        {step === 'selfie' && (
-          <CheckinSelfie
-            onConfirm={handleSelfieConfirm}
-            onCancel={handleSelfieCancel}
-            uploading={activating}
-            // TODO: REMOVE BEFORE PRODUCTION - Skip selfie for dev testing
-            onSkip={() => handleActivatePresence('https://ui-avatars.com/api/?name=Test&background=1E8FD3&color=fff&size=256')}
-          />
-        )}
+        {step === 'selfie' &&
+        <CheckinSelfie
+          onConfirm={handleSelfieConfirm}
+          onCancel={handleSelfieCancel}
+          uploading={activating}
+          // TODO: REMOVE BEFORE PRODUCTION - Skip selfie for dev testing
+          onSkip={() => handleActivatePresence('https://ui-avatars.com/api/?name=Test&background=1E8FD3&color=fff&size=256')} />
+
+        }
       </div>
-    </MobileLayout>
-  );
+    </MobileLayout>);
+
 }
