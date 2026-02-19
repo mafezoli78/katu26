@@ -173,15 +173,17 @@ export function PlaceSelector({
       {loading ? <div className="text-center py-12">
           <Loader2 className="h-10 w-10 animate-spin mx-auto text-katu-blue" />
           <p className="text-sm text-muted-foreground mt-4">Buscando locais próximos...</p>
-        </div> : viewMode === 'map' && userCoords ? (
+        </div> : viewMode === 'map' && userCoords && isFinite(userCoords.lat) && isFinite(userCoords.lng) && userCoords.lat !== 0 && userCoords.lng !== 0 ? (
           <Suspense fallback={<div className="text-center py-12"><Loader2 className="h-10 w-10 animate-spin mx-auto text-katu-blue" /></div>}>
-            <PlaceMap
-              places={places}
-              temporaryPlaces={temporaryPlaces}
-              temporaryPlacesCoords={tempPlacesCoords}
-              userCoords={userCoords}
-              onSelectPlace={onSelectPlace}
-            />
+            <div style={{ height: 'calc(100dvh - 220px)' }}>
+              <PlaceMap
+                places={places}
+                temporaryPlaces={temporaryPlaces}
+                temporaryPlacesCoords={tempPlacesCoords}
+                userCoords={userCoords}
+                onSelectPlace={onSelectPlace}
+              />
+            </div>
           </Suspense>
         ) : <div className="space-y-4">
           {/* Temporary Places Section (prioritized) */}
