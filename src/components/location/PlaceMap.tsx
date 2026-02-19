@@ -119,8 +119,9 @@ export default function PlaceMap({
   }, [temporaryPlacesCoords]);
 
   return (
-    <div className="relative rounded-xl overflow-hidden border border-border h-full" style={{ position: 'relative', zIndex: 0 }}>
+    <div className="relative rounded-xl overflow-hidden border border-border h-full bg-muted" style={{ position: 'relative', zIndex: 0 }}>
       <MapContainer
+        key={`${userCoords.lat}-${userCoords.lng}`}
         center={[userCoords.lat, userCoords.lng]}
         zoom={16}
         zoomControl={false}
