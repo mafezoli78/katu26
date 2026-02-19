@@ -173,7 +173,7 @@ export function PlaceSelector({
       {loading ? <div className="text-center py-12">
           <Loader2 className="h-10 w-10 animate-spin mx-auto text-katu-blue" />
           <p className="text-sm text-muted-foreground mt-4">Buscando locais próximos...</p>
-        </div> : viewMode === 'map' && userCoords && isFinite(userCoords.lat) && isFinite(userCoords.lng) && userCoords.lat !== 0 && userCoords.lng !== 0 ? (
+        </div> : viewMode === 'map' && userCoords ? (
           <Suspense fallback={<div className="text-center py-12"><Loader2 className="h-10 w-10 animate-spin mx-auto text-katu-blue" /></div>}>
             <div style={{ height: 'calc(100dvh - 220px)' }}>
               <PlaceMap
