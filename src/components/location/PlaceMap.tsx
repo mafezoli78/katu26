@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,15 @@ interface PlaceMapProps {
   temporaryPlacesCoords: { id: string; latitude: number; longitude: number }[];
   userCoords: { lat: number; lng: number };
   onSelectPlace: (placeId: string) => void;
+}
+
+// Internal component to grab map instance and handle tile loading
+function MapController({ onMapReady }: { onMapReady: (map: L.Map) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    onMapReady(map);
+  }, [map, onMapReady]);
+  return null;
 }
 
 // User location marker (pulsing blue dot)
@@ -53,14 +62,20 @@ export default function PlaceMap({
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const [tilesLoading, setTilesLoading] = useState(true);
 
-  // Recenter handler using the map instance
+  const handleMapReady = useCallback((map: L.Map) => {
+    setMapInstance(map);
+    map.on('loading', () => setTilesLoading(true));
+    map.on('load', () => setTilesLoading(false));
+    // Initial tiles may already be loaded
+    setTilesLoading(false);
+  }, []);
+
   const handleRecenter = useCallback(() => {
     if (mapInstance) {
       mapInstance.flyTo([userCoords.lat, userCoords.lng], 16, { duration: 0.5 });
     }
   }, [mapInstance, userCoords]);
 
-  // Build a lookup for temporary place coords
   const tempCoordsMap = useMemo(() => {
     const map = new Map<string, { latitude: number; longitude: number }>();
     temporaryPlacesCoords.forEach(t => map.set(t.id, { latitude: t.latitude, longitude: t.longitude }));
@@ -76,18 +91,15 @@ export default function PlaceMap({
         zoomControl={false}
         attributionControl={true}
         className="h-full w-full"
-        ref={setMapInstance}
-        whenReady={() => setTilesLoading(false)}
+        style={{ background: 'hsl(var(--muted))' }}
       >
+        <MapController onMapReady={handleMapReady} />
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
         />
-
-        {/* User location */}
         <UserLocationMarker coords={userCoords} />
 
-        {/* Foursquare places */}
         {places.map(place => (
           <Marker
             key={place.id}
@@ -122,7 +134,6 @@ export default function PlaceMap({
           </Marker>
         ))}
 
-        {/* Temporary places */}
         {temporaryPlaces.map(tp => {
           const coords = tempCoordsMap.get(tp.id);
           if (!coords) return null;
@@ -158,14 +169,12 @@ export default function PlaceMap({
         })}
       </MapContainer>
 
-      {/* Loading overlay */}
       {tilesLoading && (
         <div className="absolute inset-0 z-[500] flex items-center justify-center bg-background/40 pointer-events-none">
           <Loader2 className="h-8 w-8 animate-spin text-katu-blue" />
         </div>
       )}
 
-      {/* Recenter button */}
       <button
         onClick={handleRecenter}
         className="leaflet-recenter-btn"
