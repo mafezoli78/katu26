@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { useState, useMemo, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Button } from '@/components/ui/button';
@@ -16,28 +16,15 @@ interface PlaceMapProps {
   onSelectPlace: (placeId: string) => void;
 }
 
-// Internal component to grab map instance and handle tile loading
-function MapController({ onMapReady }: { onMapReady: (map: L.Map) => void }) {
-  const map = useMap();
-  useEffect(() => {
-    onMapReady(map);
-  }, [map, onMapReady]);
-  return null;
-}
-
-// User location marker (pulsing blue dot)
-function UserLocationMarker({ coords }: { coords: { lat: number; lng: number } }) {
-  const icon = useMemo(() => L.divIcon({
+function createUserIcon(): L.DivIcon {
+  return L.divIcon({
     className: 'leaflet-user-location',
     html: '<div class="user-dot"><div class="user-dot-pulse"></div></div>',
     iconSize: [20, 20],
     iconAnchor: [10, 10],
-  }), []);
-
-  return <Marker position={[coords.lat, coords.lng]} icon={icon} interactive={false} />;
+  });
 }
 
-// Custom pin icon factory
 function createPlaceIcon(activeUsers: number, isTemporary: boolean): L.DivIcon {
   let bgClass = 'pin-empty';
   if (isTemporary) bgClass = 'pin-temporary';
@@ -52,6 +39,8 @@ function createPlaceIcon(activeUsers: number, isTemporary: boolean): L.DivIcon {
   });
 }
 
+const userIcon = createUserIcon();
+
 export default function PlaceMap({
   places,
   temporaryPlaces,
@@ -60,26 +49,15 @@ export default function PlaceMap({
   onSelectPlace,
 }: PlaceMapProps) {
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
-  const [tilesLoading, setTilesLoading] = useState(true);
-
-  const handleMapReady = useCallback((map: L.Map) => {
-    setMapInstance(map);
-    map.on('loading', () => setTilesLoading(true));
-    map.on('load', () => setTilesLoading(false));
-    // Initial tiles may already be loaded
-    setTilesLoading(false);
-  }, []);
 
   const handleRecenter = useCallback(() => {
-    if (mapInstance) {
-      mapInstance.flyTo([userCoords.lat, userCoords.lng], 16, { duration: 0.5 });
-    }
+    mapInstance?.flyTo([userCoords.lat, userCoords.lng], 16, { duration: 0.5 });
   }, [mapInstance, userCoords]);
 
   const tempCoordsMap = useMemo(() => {
-    const map = new Map<string, { latitude: number; longitude: number }>();
-    temporaryPlacesCoords.forEach(t => map.set(t.id, { latitude: t.latitude, longitude: t.longitude }));
-    return map;
+    const m = new Map<string, { latitude: number; longitude: number }>();
+    temporaryPlacesCoords.forEach(t => m.set(t.id, { latitude: t.latitude, longitude: t.longitude }));
+    return m;
   }, [temporaryPlacesCoords]);
 
   return (
@@ -91,14 +69,14 @@ export default function PlaceMap({
         zoomControl={false}
         attributionControl={true}
         className="h-full w-full"
-        style={{ background: 'hsl(var(--muted))' }}
+        ref={setMapInstance}
       >
-        <MapController onMapReady={handleMapReady} />
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
         />
-        <UserLocationMarker coords={userCoords} />
+
+        <Marker position={[userCoords.lat, userCoords.lng]} icon={userIcon} interactive={false} />
 
         {places.map(place => (
           <Marker
@@ -121,10 +99,7 @@ export default function PlaceMap({
                   <Button
                     size="sm"
                     className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4 h-8"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectPlace(place.id);
-                    }}
+                    onClick={(e) => { e.stopPropagation(); onSelectPlace(place.id); }}
                   >
                     Aqui
                   </Button>
@@ -154,10 +129,7 @@ export default function PlaceMap({
                     <Button
                       size="sm"
                       className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4 h-8"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectPlace(tp.id);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); onSelectPlace(tp.id); }}
                     >
                       Aqui
                     </Button>
@@ -169,25 +141,12 @@ export default function PlaceMap({
         })}
       </MapContainer>
 
-      {tilesLoading && (
-        <div className="absolute inset-0 z-[500] flex items-center justify-center bg-background/40 pointer-events-none">
-          <Loader2 className="h-8 w-8 animate-spin text-katu-blue" />
-        </div>
-      )}
-
       <button
         onClick={handleRecenter}
-        className="leaflet-recenter-btn"
         style={{
-          position: 'absolute',
-          bottom: '16px',
-          right: '16px',
-          zIndex: 1000,
-          backgroundColor: 'white',
-          padding: '8px',
-          borderRadius: '8px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-          border: '1px solid #e2e8f0'
+          position: 'absolute', bottom: 16, right: 16, zIndex: 1000,
+          backgroundColor: 'white', padding: 8, borderRadius: 8,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0',
         }}
         aria-label="Centralizar em mim"
       >
