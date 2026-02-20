@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Locate, Users, Loader2 } from 'lucide-react';
+import { Locate, Users } from 'lucide-react';
 import { Place } from '@/services/placesService';
 import { NearbyTemporaryPlace } from '@/hooks/usePresence';
 
@@ -16,14 +15,12 @@ interface PlaceMapProps {
   onSelectPlace: (placeId: string) => void;
 }
 
-function createUserIcon(): L.DivIcon {
-  return L.divIcon({
-    className: 'leaflet-user-location',
-    html: '<div class="user-dot"><div class="user-dot-pulse"></div></div>',
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
-  });
-}
+const userIcon = L.divIcon({
+  className: 'leaflet-user-location',
+  html: '<div class="user-dot"><div class="user-dot-pulse"></div></div>',
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+});
 
 function createPlaceIcon(activeUsers: number, isTemporary: boolean): L.DivIcon {
   let bgClass = 'pin-empty';
@@ -38,8 +35,6 @@ function createPlaceIcon(activeUsers: number, isTemporary: boolean): L.DivIcon {
     popupAnchor: [0, -18],
   });
 }
-
-const userIcon = createUserIcon();
 
 export default function PlaceMap({
   places,
