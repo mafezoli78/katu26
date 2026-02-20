@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Button } from '@/components/ui/button';
@@ -14,13 +14,6 @@ interface PlaceMapProps {
   temporaryPlacesCoords: { id: string; latitude: number; longitude: number }[];
   userCoords: { lat: number; lng: number };
   onSelectPlace: (placeId: string) => void;
-}
-
-// Internal component that exposes the map instance via callback — returns null
-function MapInstanceGrabber({ onMap }: { onMap: (map: L.Map) => void }) {
-  const map = useMap();
-  useEffect(() => { onMap(map); }, [map, onMap]);
-  return null;
 }
 
 // User location marker (pulsing blue dot)
@@ -60,31 +53,11 @@ export default function PlaceMap({
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const [tilesLoading, setTilesLoading] = useState(true);
 
-  const handleMap = useCallback((map: L.Map) => { setMapInstance(map); }, []);
-
-  // Listen to tile loading events on the map instance (outside MapContainer)
-  useEffect(() => {
-    if (!mapInstance) return;
-    const onLoading = () => setTilesLoading(true);
-    const onLoad = () => setTilesLoading(false);
-
-    mapInstance.on('loading', onLoading);
-    mapInstance.on('load', onLoad);
-
-    // Check if already loaded
-    const container = mapInstance.getContainer();
-    if (container.querySelectorAll('.leaflet-tile-loaded').length > 0) {
-      setTilesLoading(false);
-    }
-
-    return () => {
-      mapInstance.off('loading', onLoading);
-      mapInstance.off('load', onLoad);
-    };
-  }, [mapInstance]);
-
+  // Recenter handler using the map instance
   const handleRecenter = useCallback(() => {
-    mapInstance?.flyTo([userCoords.lat, userCoords.lng], 16, { duration: 0.5 });
+    if (mapInstance) {
+      mapInstance.flyTo([userCoords.lat, userCoords.lng], 16, { duration: 0.5 });
+    }
   }, [mapInstance, userCoords]);
 
   // Build a lookup for temporary place coords
@@ -103,10 +76,9 @@ export default function PlaceMap({
         zoomControl={false}
         attributionControl={true}
         className="h-full w-full"
+        ref={setMapInstance}
+        whenReady={() => setTilesLoading(false)}
       >
-        {/* This component returns null — just grabs the map instance */}
-        <MapInstanceGrabber onMap={handleMap} />
-
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
@@ -186,19 +158,29 @@ export default function PlaceMap({
         })}
       </MapContainer>
 
-      {/* Loading overlay — OUTSIDE MapContainer to avoid render2 error */}
+      {/* Loading overlay */}
       {tilesLoading && (
         <div className="absolute inset-0 z-[500] flex items-center justify-center bg-background/40 pointer-events-none">
           <Loader2 className="h-8 w-8 animate-spin text-katu-blue" />
         </div>
       )}
 
-      {/* Recenter button — OUTSIDE MapContainer */}
+      {/* Recenter button */}
       <button
         onClick={handleRecenter}
         className="leaflet-recenter-btn"
+        style={{
+          position: 'absolute',
+          bottom: '16px',
+          right: '16px',
+          zIndex: 1000,
+          backgroundColor: 'white',
+          padding: '8px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          border: '1px solid #e2e8f0'
+        }}
         aria-label="Centralizar em mim"
-        title="Centralizar em mim"
       >
         <Locate className="h-5 w-5" />
       </button>
