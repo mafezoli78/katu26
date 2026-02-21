@@ -1,9 +1,6 @@
-import { useState, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useRef, useEffect, useCallback } from 'react';
 import L from 'leaflet';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Locate, Users } from 'lucide-react';
+import { Locate } from 'lucide-react';
 import { Place } from '@/services/placesService';
 import { NearbyTemporaryPlace } from '@/hooks/usePresence';
 
@@ -14,13 +11,6 @@ interface PlaceMapProps {
   userCoords: { lat: number; lng: number };
   onSelectPlace: (placeId: string) => void;
 }
-
-const userIcon = L.divIcon({
-  className: 'leaflet-user-location',
-  html: '<div class="user-dot"><div class="user-dot-pulse"></div></div>',
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
-});
 
 function createPlaceIcon(activeUsers: number, isTemporary: boolean): L.DivIcon {
   let bgClass = 'pin-empty';
@@ -36,6 +26,34 @@ function createPlaceIcon(activeUsers: number, isTemporary: boolean): L.DivIcon {
   });
 }
 
+const userIcon = L.divIcon({
+  className: 'leaflet-user-location',
+  html: '<div class="user-dot"><div class="user-dot-pulse"></div></div>',
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+});
+
+function buildPopupHtml(name: string, activeUsers: number, placeId: string): string {
+  const badge = activeUsers > 0
+    ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:9999px;background:rgba(34,197,94,0.1);color:#16a34a;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        ${activeUsers}
+      </span>`
+    : `<span style="font-size:12px;color:#9ca3af;">Ninguém aqui</span>`;
+
+  return `
+    <div style="padding:8px;min-width:180px;">
+      <p style="font-weight:600;font-size:14px;margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        ${badge}
+        <button data-place-id="${placeId}" style="background:hsl(var(--accent));color:hsl(var(--accent-foreground));border:none;border-radius:8px;padding:4px 16px;font-weight:600;font-size:13px;cursor:pointer;height:32px;">
+          Aqui
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 export default function PlaceMap({
   places,
   temporaryPlaces,
@@ -43,99 +61,101 @@ export default function PlaceMap({
   userCoords,
   onSelectPlace,
 }: PlaceMapProps) {
-  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const userMarkerRef = useRef<L.Marker | null>(null);
+  const placeMarkersRef = useRef<L.LayerGroup>(L.layerGroup());
+  const tempMarkersRef = useRef<L.LayerGroup>(L.layerGroup());
+  // Store callback in ref so popup click handler always has latest version
+  const onSelectPlaceRef = useRef(onSelectPlace);
+  onSelectPlaceRef.current = onSelectPlace;
+
+  // Init map
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const map = L.map(containerRef.current, {
+      center: [userCoords.lat, userCoords.lng],
+      zoom: 16,
+      zoomControl: false,
+      attributionControl: true,
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    }).addTo(map);
+
+    userMarkerRef.current = L.marker([userCoords.lat, userCoords.lng], { icon: userIcon, interactive: false }).addTo(map);
+    placeMarkersRef.current.addTo(map);
+    tempMarkersRef.current.addTo(map);
+
+    // Single delegated click handler on the map container for popup buttons
+    containerRef.current.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-place-id]');
+      if (btn) {
+        e.stopPropagation();
+        onSelectPlaceRef.current(btn.dataset.placeId!);
+      }
+    });
+
+    mapRef.current = map;
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update user position
+  useEffect(() => {
+    if (!userMarkerRef.current) return;
+    userMarkerRef.current.setLatLng([userCoords.lat, userCoords.lng]);
+  }, [userCoords]);
+
+  // Update place markers
+  useEffect(() => {
+    const group = placeMarkersRef.current;
+    group.clearLayers();
+    places.forEach((place) => {
+      const marker = L.marker([place.latitude, place.longitude], {
+        icon: createPlaceIcon(place.active_users ?? 0, false),
+      });
+      marker.bindPopup(buildPopupHtml(place.nome, place.active_users ?? 0, place.id), {
+        className: 'leaflet-popup-katuu',
+        closeButton: false,
+      });
+      group.addLayer(marker);
+    });
+  }, [places]);
+
+  // Update temporary place markers
+  useEffect(() => {
+    const group = tempMarkersRef.current;
+    group.clearLayers();
+    const coordsMap = new Map(temporaryPlacesCoords.map((c) => [c.id, c]));
+    temporaryPlaces.forEach((tp) => {
+      const coords = coordsMap.get(tp.id);
+      if (!coords) return;
+      const marker = L.marker([coords.latitude, coords.longitude], {
+        icon: createPlaceIcon(tp.active_users, true),
+      });
+      marker.bindPopup(buildPopupHtml(tp.nome, tp.active_users, tp.id), {
+        className: 'leaflet-popup-katuu',
+        closeButton: false,
+      });
+      group.addLayer(marker);
+    });
+  }, [temporaryPlaces, temporaryPlacesCoords]);
 
   const handleRecenter = useCallback(() => {
-    mapInstance?.flyTo([userCoords.lat, userCoords.lng], 16, { duration: 0.5 });
-  }, [mapInstance, userCoords]);
-
-  const tempCoordsMap = useMemo(() => {
-    const m = new Map<string, { latitude: number; longitude: number }>();
-    temporaryPlacesCoords.forEach(t => m.set(t.id, { latitude: t.latitude, longitude: t.longitude }));
-    return m;
-  }, [temporaryPlacesCoords]);
+    mapRef.current?.flyTo([userCoords.lat, userCoords.lng], 16, { duration: 0.5 });
+  }, [userCoords]);
 
   return (
     <div className="relative rounded-xl overflow-hidden border border-border h-full bg-muted" style={{ zIndex: 0 }}>
-      <MapContainer
-        key={`${userCoords.lat}-${userCoords.lng}`}
-        center={[userCoords.lat, userCoords.lng]}
-        zoom={16}
-        zoomControl={false}
-        attributionControl={true}
-        className="h-full w-full"
-        ref={setMapInstance}
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-        />
-
-        <Marker position={[userCoords.lat, userCoords.lng]} icon={userIcon} interactive={false} />
-
-        {places.map(place => (
-          <Marker
-            key={place.id}
-            position={[place.latitude, place.longitude]}
-            icon={createPlaceIcon(place.active_users ?? 0, false)}
-          >
-            <Popup className="leaflet-popup-katuu" closeButton={false}>
-              <div className="p-2 min-w-[180px]">
-                <p className="font-semibold text-sm truncate mb-1">{place.nome}</p>
-                <div className="flex items-center justify-between gap-2">
-                  {(place.active_users ?? 0) > 0 ? (
-                    <Badge variant="secondary" className="text-xs bg-katu-green/10 text-katu-green border-0">
-                      <Users className="h-3 w-3 mr-1" />
-                      {place.active_users}
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Ninguém aqui</span>
-                  )}
-                  <Button
-                    size="sm"
-                    className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4 h-8"
-                    onClick={(e) => { e.stopPropagation(); onSelectPlace(place.id); }}
-                  >
-                    Aqui
-                  </Button>
-                </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-
-        {temporaryPlaces.map(tp => {
-          const coords = tempCoordsMap.get(tp.id);
-          if (!coords) return null;
-          return (
-            <Marker
-              key={tp.id}
-              position={[coords.latitude, coords.longitude]}
-              icon={createPlaceIcon(tp.active_users, true)}
-            >
-              <Popup className="leaflet-popup-katuu" closeButton={false}>
-                <div className="p-2 min-w-[180px]">
-                  <p className="font-semibold text-sm truncate mb-1">{tp.nome}</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge variant="secondary" className="text-xs bg-katu-green/10 text-katu-green border-0">
-                      <Users className="h-3 w-3 mr-1" />
-                      {tp.active_users}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      className="bg-accent text-accent-foreground hover:bg-accent/90 rounded-lg font-semibold px-4 h-8"
-                      onClick={(e) => { e.stopPropagation(); onSelectPlace(tp.id); }}
-                    >
-                      Aqui
-                    </Button>
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
-          );
-        })}
-      </MapContainer>
-
+      <div ref={containerRef} className="h-full w-full" />
       <button
         onClick={handleRecenter}
         style={{
