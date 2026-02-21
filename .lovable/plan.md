@@ -1,46 +1,71 @@
+# Approve with constraint:
 
 
-# Correcao da tela branca no mapa Leaflet
 
-## Problemas identificados
+# The "Aqui" button inside the Leaflet popup MUST call the existing React confirmPresence(place) callback via a function reference passed to the map instance.
 
-1. **overflow-hidden no container pai**: O `<main>` em `MobileLayout.tsx` (linha 16) aplica `overflow-hidden`, cortando o mapa que tem altura baseada em `100vh`.
 
-2. **Altura do mapa nao considera layout real**: O container usa `calc(100vh - 200px)` como valor fixo, mas a altura disponivel depende do header (~56px), bottom nav (~80px com padding), e padding do conteudo (~32px). O valor correto seria diferente e mais seguro se calculado dinamicamente.
 
-3. **Z-index do mapa conflita com header/nav**: O Leaflet usa z-indexes internos (tiles em z-index 200+, controles em 1000+), que podem cobrir ou ser cobertos pelo header e bottom nav fixos.
+# Do NOT implement presence confirmation using DOM event delegation on the container.
 
-4. **Sem feedback visual durante carregamento de tiles**: O usuario ve uma area cinza/branca ate as tiles carregarem, sem indicacao de que o mapa esta funcionando.
+
+
+# The map should receive a onConfirmPlace(placeId) prop from React and invoke it directly when the popup button is clicked.
+
+
+
+# Presence INSERT logic must remain inside React/Supabase service layer.
+
+&nbsp;
+
+# Correção Definitiva: Substituir react-leaflet por Leaflet puro
+
+## Problema
+
+O erro `render2 is not a function` ocorre porque o Vite pre-bundler cria uma cadeia de contexto React quebrada ao processar o `@react-leaflet/core`. Isso acontece independentemente de como o `MapContainer` é usado -- o problema esta no bundler, nao no codigo.
 
 ## Solucao
 
-### Arquivo: `src/components/location/PlaceMap.tsx`
+Remover completamente o `react-leaflet` e usar o Leaflet nativo com `useRef` + `useEffect`. Isso elimina 100% dos problemas de contexto React.
 
-- Trocar a altura fixa `calc(100vh - 200px)` por uma altura que se adapte ao container disponivel, usando `h-full` com o container pai controlando a altura
-- Adicionar `z-index: 0` no container do mapa para isola-lo do header/nav
-- Adicionar estado de loading para tiles: ouvir o evento `tileload`/`load` do TileLayer para mostrar um spinner sobre o mapa enquanto as tiles carregam
-- Adicionar guard para coordenadas invalidas (NaN, 0,0) antes de renderizar o MapContainer
+## Passos
 
-Mudancas especificas:
-- Container externo: trocar `style={{ height: 'calc(100vh - 200px)' }}` por `style={{ height: 'calc(100dvh - 220px)' }}` usando `dvh` (dynamic viewport height) que lida melhor com barras de navegacao mobile, e 220px para cobrir header (56px) + nav (80px) + padding (32px) + margem
-- Adicionar `position: relative; z-index: 0` ao container externo para criar stacking context isolado
-- Adicionar componente interno `TileLoadingOverlay` que usa `useMap()` para escutar eventos de loading do mapa e mostrar spinner
+### 1. Remover dependencia react-leaflet
 
-### Arquivo: `src/index.css`
+- Remover `react-leaflet` e `@react-leaflet/core` do `package.json`
+- Manter apenas `leaflet` e `@types/leaflet`
 
-- Adicionar regra para garantir que `.leaflet-container` tenha `z-index: 0` explicito
-- Adicionar estilo para o overlay de loading das tiles
+### 2. Reescrever PlaceMap.tsx com Leaflet puro
 
-### Arquivo: `src/components/location/PlaceSelector.tsx`
+- Usar `useRef` para o container div e `useEffect` para inicializar o mapa
+- Criar marcadores e popups diretamente via API do Leaflet (`L.marker`, `L.popup`)
+- Gerenciar o ciclo de vida do mapa manualmente (criar no mount, destruir no unmount)
+- Manter toda a funcionalidade existente: pins customizados, popups com botao "Aqui", recentralizar, ponto azul do usuario
 
-- Envolver o `PlaceMap` em um container com altura explicita para garantir que `h-full` funcione
-- Adicionar validacao: so renderizar o mapa se `userCoords.lat` e `userCoords.lng` forem numeros validos e diferentes de zero
+### 3. Manter CSS existente
 
-## Resumo de arquivos
+- Todos os estilos CSS do Leaflet ja definidos em `index.css` continuam funcionando (.place-pin, .user-dot, etc.)
+- Import do `leaflet/dist/leaflet.css` permanece em `main.tsx`
 
-| Arquivo | Acao |
-|---|---|
-| `src/components/location/PlaceMap.tsx` | Modificar (altura, z-index, loading tiles, guard coords) |
-| `src/index.css` | Modificar (z-index leaflet-container, loading overlay) |
-| `src/components/location/PlaceSelector.tsx` | Modificar (container com altura, validacao de coords) |
+### 4. Manter lazy loading
 
+- O `PlaceSelector.tsx` continuara usando `lazy(() => import(...))` para o `PlaceMap`
+
+## Detalhes Tecnicos
+
+Estrutura do novo `PlaceMap.tsx`:
+
+```text
+PlaceMap (componente funcional)
+  |-- useRef<HTMLDivElement>    -> container do mapa
+  |-- useRef<L.Map>            -> instancia do mapa  
+  |-- useEffect (mount)        -> L.map(), L.tileLayer(), marcador usuario
+  |-- useEffect (places)       -> atualiza marcadores de places
+  |-- useEffect (tempPlaces)   -> atualiza marcadores temporarios
+  |-- useEffect (userCoords)   -> atualiza posicao do marcador usuario
+  |-- cleanup (unmount)        -> map.remove()
+```
+
+Popups com botao "Aqui" serao criados via `L.popup({ content: htmlString })` com event delegation no container para capturar cliques nos botoes.
+
+O botao de recentralizar continua como elemento React posicionado absolutamente sobre o mapa.
