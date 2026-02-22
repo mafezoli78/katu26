@@ -1,71 +1,89 @@
-# Approve with constraint:
-
-
-
-# The "Aqui" button inside the Leaflet popup MUST call the existing React confirmPresence(place) callback via a function reference passed to the map instance.
-
-
-
-# Do NOT implement presence confirmation using DOM event delegation on the container.
-
-
-
-# The map should receive a onConfirmPlace(placeId) prop from React and invoke it directly when the popup button is clicked.
-
-
-
-# Presence INSERT logic must remain inside React/Supabase service layer.
-
-&nbsp;
-
-# Correção Definitiva: Substituir react-leaflet por Leaflet puro
+# Camera Service - Serviço Global de Câmera
 
 ## Problema
 
-O erro `render2 is not a function` ocorre porque o Vite pre-bundler cria uma cadeia de contexto React quebrada ao processar o `@react-leaflet/core`. Isso acontece independentemente de como o `MapContainer` é usado -- o problema esta no bundler, nao no codigo.
+No iOS Safari e PWA, chamadas a `getUserMedia()` que não ocorrem diretamente no stack de um evento de toque do usuario sao silenciosamente bloqueadas. Atualmente, o fluxo de check-in navega para a tela de selfie e so entao solicita a camera, quebrando a cadeia sincrona do gesto.
 
 ## Solucao
 
-Remover completamente o `react-leaflet` e usar o Leaflet nativo com `useRef` + `useEffect`. Isso elimina 100% dos problemas de contexto React.
+Criar um modulo singleton puro (sem React) que gerencia o ciclo de vida do MediaStream da camera.
 
-## Passos
+## Arquivo
 
-### 1. Remover dependencia react-leaflet
+`src/services/cameraService.ts`
 
-- Remover `react-leaflet` e `@react-leaflet/core` do `package.json`
-- Manter apenas `leaflet` e `@types/leaflet`
+## API do Servico
 
-### 2. Reescrever PlaceMap.tsx com Leaflet puro
-
-- Usar `useRef` para o container div e `useEffect` para inicializar o mapa
-- Criar marcadores e popups diretamente via API do Leaflet (`L.marker`, `L.popup`)
-- Gerenciar o ciclo de vida do mapa manualmente (criar no mount, destruir no unmount)
-- Manter toda a funcionalidade existente: pins customizados, popups com botao "Aqui", recentralizar, ponto azul do usuario
-
-### 3. Manter CSS existente
-
-- Todos os estilos CSS do Leaflet ja definidos em `index.css` continuam funcionando (.place-pin, .user-dot, etc.)
-- Import do `leaflet/dist/leaflet.css` permanece em `main.tsx`
-
-### 4. Manter lazy loading
-
-- O `PlaceSelector.tsx` continuara usando `lazy(() => import(...))` para o `PlaceMap`
+```text
+requestCamera()    -> Promise<MediaStream>   // solicita getUserMedia
+getStream()        -> MediaStream | null      // retorna stream ativo
+stopCamera()       -> void                    // para todas as tracks
+isActive()         -> boolean                 // verifica se ha stream ativo
+```
 
 ## Detalhes Tecnicos
 
-Estrutura do novo `PlaceMap.tsx`:
+**Estrutura interna:**
+
+- Uma variavel de modulo `currentStream: MediaStream | null` armazena o stream ativo
+- Nenhum estado React, nenhum hook, nenhum contexto
+- Exportacoes nomeadas (sem classe, sem instanciacao)
+
+**requestCamera():**
+
+Se getUserMedia falhar:
+
+- Garantir que currentStream permaneça null
+
+- Não manter stream anterior
+
+- Repassar o erro original sem modificar
+
+- Chama `navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } }, audio: false })`
+- Se ja existe um stream ativo, para as tracks anteriores antes de solicitar novo
+- Armazena o novo stream em `currentStream`
+- Retorna o stream
+
+**getStream():**
+
+- Retorna `currentStream` (pode ser null)
+
+**stopCamera():**
+
+- Itera sobre `currentStream.getTracks()` chamando `.stop()` em cada
+- Define `currentStream = null`
+
+**isActive():**
+
+- Retorna `currentStream !== null && currentStream.getTracks().some(t => t.readyState === 'live')`
+
+## Fluxo de Uso Futuro (fora deste escopo)
 
 ```text
-PlaceMap (componente funcional)
-  |-- useRef<HTMLDivElement>    -> container do mapa
-  |-- useRef<L.Map>            -> instancia do mapa  
-  |-- useEffect (mount)        -> L.map(), L.tileLayer(), marcador usuario
-  |-- useEffect (places)       -> atualiza marcadores de places
-  |-- useEffect (tempPlaces)   -> atualiza marcadores temporarios
-  |-- useEffect (userCoords)   -> atualiza posicao do marcador usuario
-  |-- cleanup (unmount)        -> map.remove()
+A chamada a requestCamera() deve ser a PRIMEIRA instrução executada no handler de clique.
+Nenhuma instrução async pode ocorrer antes dela.
+Nenhuma navegação pode ocorrer antes dela.
+Nenhuma chamada a setState pode ocorrer antes dela.
+
+Usuario clica "Entrar" (onClick)
+  -> cameraService.requestCamera()   // direto no handler, sincrono ao gesto
+  -> navigate('/checkin-selfie')     // apos o await
+  -> CheckinSelfie usa cameraService.getStream() para alimentar o <video>
+  -> Apos captura ou cancelamento: cameraService.stopCamera()
 ```
 
-Popups com botao "Aqui" serao criados via `L.popup({ content: htmlString })` com event delegation no container para capturar cliques nos botoes.
+## O que NAO sera feito
 
-O botao de recentralizar continua como elemento React posicionado absolutamente sobre o mapa.
+- requestCamera() deve proteger contra chamadas concorrentes.
+- Se já existir uma promise em andamento, retornar a mesma promise.
+- Nenhuma alteracao em componentes existentes
+- Nenhuma integracao com CheckinSelfie ou fluxo de check-in
+- Nenhuma UI, upload ou compressao
+- Nenhum hook React wrapper (sera criado em etapa futura se necessario)
+
+## Arquivo unico a criar
+
+
+| Arquivo                         | Acao  |
+| ------------------------------- | ----- |
+| `src/services/cameraService.ts` | Criar |
