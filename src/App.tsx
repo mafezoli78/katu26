@@ -12,6 +12,7 @@ import Waves from "./pages/Waves";
 import Chat from "./pages/Chat";
 import Location from "./pages/Location";
 import NotFound from "./pages/NotFound";
+import Debug from "./pages/Debug";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/waves" element={<Waves />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/location" element={<Location />} />
+            <Route path="/debug" element={<Debug />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
