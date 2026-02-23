@@ -346,6 +346,7 @@ export default function Location() {
   };
 
   const handleSelfieCancel = () => {
+    cameraService.stopCamera();
     setStep('expression');
   };
 
