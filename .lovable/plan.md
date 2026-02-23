@@ -1,89 +1,87 @@
-# Camera Service - Serviço Global de Câmera
+# Integrar cameraService ao fluxo de check-in
 
-## Problema
+## Resumo
 
-No iOS Safari e PWA, chamadas a `getUserMedia()` que não ocorrem diretamente no stack de um evento de toque do usuario sao silenciosamente bloqueadas. Atualmente, o fluxo de check-in navega para a tela de selfie e so entao solicita a camera, quebrando a cadeia sincrona do gesto.
+Mover a chamada `getUserMedia()` para o handler de clique do botao "Continuar" (na tela de expressao), usando `cameraService.requestCamera()`. O componente `CheckinSelfie` passa a consumir o stream ja obtido via `cameraService.getStream()` em vez de solicitar a camera por conta propria.
 
-## Solucao
+## Alteracoes
 
-Criar um modulo singleton puro (sem React) que gerencia o ciclo de vida do MediaStream da camera.
+### 1. Location.tsx -- Botao "Continuar" (expression -> selfie)
 
-## Arquivo
-
-`src/services/cameraService.ts`
-
-## API do Servico
+**Linha 572**: O `onClick={() => setStep('selfie')}` sera substituido por um handler async:
 
 ```text
-requestCamera()    -> Promise<MediaStream>   // solicita getUserMedia
-getStream()        -> MediaStream | null      // retorna stream ativo
-stopCamera()       -> void                    // para todas as tracks
-isActive()         -> boolean                 // verifica se ha stream ativo
+onClick handler:
+  1. await cameraService.requestCamera()    // PRIMEIRA instrucao, sincrona ao gesto
+  2. setStep('selfie')                      // so navega apos sucesso
+
+Em caso de erro:
+  - toast com mensagem de erro
+  - nao navegar (permanecer na tela de expressao)
 ```
 
-## Detalhes Tecnicos
+- Adicionar import de `cameraService` e estado `cameraRequesting` para feedback visual (loader no botao).
+  &nbsp;
+  **IMPORTANTE:**
+  A chamada a cameraService.requestCamera() deve ocorrer diretamente no onClick original do botão, sem wrappers intermediários (ex: funções externas, setTimeout, debounce, etc), para preservar a cadeia síncrona do gesto do usuário exigida pelo iOS Safari e PWA.
 
-**Estrutura interna:**
+### 2. CheckinSelfie.tsx -- Remover getUserMedia interno
 
-- Uma variavel de modulo `currentStream: MediaStream | null` armazena o stream ativo
-- Nenhum estado React, nenhum hook, nenhum contexto
-- Exportacoes nomeadas (sem classe, sem instanciacao)
+**Remover:**
 
-**requestCamera():**
+- A funcao `startCamera()` que chama `navigator.mediaDevices.getUserMedia()`
+- O `streamRef` interno (substituido pelo cameraService)
+- O `stopCamera()` interno (substituido por `cameraService.stopCamera()`)
 
-Se getUserMedia falhar:
+**Alterar:**
 
-- Garantir que currentStream permaneça null
+- O step inicial muda de `'explain'` para `'capture'` (a explicacao ja nao faz sentido porque a camera ja foi concedida)
+- Ao montar no step `capture`, usar `cameraService.getStream()` para alimentar o `<video>`
+- Se `getStream()` retornar `null`, exibir mensagem de fallback com botao "Voltar"
+- `handleRetake`: chamar `cameraService.requestCamera()` para obter novo stream (retry manual pelo usuario)
+- `handleCancel` e `handleCapture` (apos captura): chamar `cameraService.stopCamera()`
+- `onConfirm` (apos upload): o Location.tsx ja chama `stopCamera()` no fim do fluxo
 
-- Não manter stream anterior
+### 3. CheckinSelfie.tsx -- Vincular stream ao video
 
-- Repassar o erro original sem modificar
-
-- Chama `navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } }, audio: false })`
-- Se ja existe um stream ativo, para as tracks anteriores antes de solicitar novo
-- Armazena o novo stream em `currentStream`
-- Retorna o stream
-
-**getStream():**
-
-- Retorna `currentStream` (pode ser null)
-
-**stopCamera():**
-
-- Itera sobre `currentStream.getTracks()` chamando `.stop()` em cada
-- Define `currentStream = null`
-
-**isActive():**
-
-- Retorna `currentStream !== null && currentStream.getTracks().some(t => t.readyState === 'live')`
-
-## Fluxo de Uso Futuro (fora deste escopo)
+Adicionar um `useEffect` que observa o step `capture`:
 
 ```text
-A chamada a requestCamera() deve ser a PRIMEIRA instrução executada no handler de clique.
-Nenhuma instrução async pode ocorrer antes dela.
-Nenhuma navegação pode ocorrer antes dela.
-Nenhuma chamada a setState pode ocorrer antes dela.
-
-Usuario clica "Entrar" (onClick)
-  -> cameraService.requestCamera()   // direto no handler, sincrono ao gesto
-  -> navigate('/checkin-selfie')     // apos o await
-  -> CheckinSelfie usa cameraService.getStream() para alimentar o <video>
-  -> Apos captura ou cancelamento: cameraService.stopCamera()
+useEffect:
+  if step === 'capture':
+    const stream = cameraService.getStream()
+    if stream && videoRef.current:
+      videoRef.current.srcObject = stream
+      videoRef.current.play().catch(() => {})
+    else:
+      setCameraError('camera_unavailable')
 ```
 
-## O que NAO sera feito
+Este useEffect NAO chama getUserMedia -- apenas conecta o stream ja existente ao elemento video.
 
-- requestCamera() deve proteger contra chamadas concorrentes.
-- Se já existir uma promise em andamento, retornar a mesma promise.
-- Nenhuma alteracao em componentes existentes
-- Nenhuma integracao com CheckinSelfie ou fluxo de check-in
-- Nenhuma UI, upload ou compressao
-- Nenhum hook React wrapper (sera criado em etapa futura se necessario)
+Garantir que o elemento <video> possua:
 
-## Arquivo unico a criar
+- autoPlay
+
+- playsInline
+
+- muted
+
+Para evitar bloqueio de autoplay em iOS Safari e Android WebView.
+
+## Arquivos alterados
 
 
-| Arquivo                         | Acao  |
-| ------------------------------- | ----- |
-| `src/services/cameraService.ts` | Criar |
+| Arquivo                                     | Alteracao                                                                                     |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/pages/Location.tsx`                    | Chamar `cameraService.requestCamera()` no onClick antes de `setStep('selfie')`                |
+| `src/components/location/CheckinSelfie.tsx` | Remover getUserMedia interno, usar `cameraService.getStream()` e `cameraService.stopCamera()` |
+
+
+## O que NAO muda
+
+- Layout e design visual
+- Logica de upload de selfie
+- Logica de presenca
+- Fluxo de geolocalizacao
+- Nenhum outro componente
