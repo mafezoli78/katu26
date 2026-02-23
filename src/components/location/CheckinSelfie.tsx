@@ -20,6 +20,13 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      cameraService.stopCamera();
+    };
+  }, []);
+
   // Attach stream to video element when on capture step
   useEffect(() => {
     if (step !== 'capture') return;
@@ -58,6 +65,7 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
 
     canvas.toBlob((blob) => {
       if (blob) {
+        cameraService.stopCamera();
         setCapturedBlob(blob);
         setCapturedImage(URL.createObjectURL(blob));
         setStep('preview');
@@ -80,6 +88,7 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
 
   const handleUsePhoto = () => {
     if (capturedBlob) {
+      cameraService.stopCamera();
       onConfirm(capturedBlob);
     }
   };
