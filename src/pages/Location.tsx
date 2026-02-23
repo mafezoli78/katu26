@@ -14,6 +14,7 @@ import { Place, placesService, PROXIMITY_THRESHOLD_METERS, INITIAL_SEARCH_RADIUS
 import { PlaceSelector } from '@/components/location/PlaceSelector';
 import { CheckinSelfie } from '@/components/location/CheckinSelfie';
 import { supabase } from '@/integrations/supabase/client';
+import * as cameraService from '@/services/cameraService';
 
 export default function Location() {
   const { user } = useAuth();
@@ -38,6 +39,7 @@ export default function Location() {
   const [newPlaceName, setNewPlaceName] = useState('');
   const [activating, setActivating] = useState(false);
   const [expressionText, setExpressionText] = useState('');
+  const [cameraRequesting, setCameraRequesting] = useState(false);
 
   // Default intention: "Livre" (aberto a qualquer interação)
   const DEFAULT_INTENTION_ID = '8302ef7d-e40e-494f-9ea3-7cfb52730bb2';
@@ -569,10 +571,33 @@ export default function Location() {
                 </div>
 
                 <Button
-                onClick={() => setStep('selfie')}
+                disabled={cameraRequesting}
+                onClick={async () => {
+                  setCameraRequesting(true);
+                  try {
+                    await cameraService.requestCamera();
+                    setStep('selfie');
+                  } catch (err) {
+                    console.error('[Location] Camera request failed:', err);
+                    toast({
+                      variant: 'destructive',
+                      title: 'Não foi possível acessar a câmera',
+                      description: 'Verifique as permissões do navegador.',
+                    });
+                  } finally {
+                    setCameraRequesting(false);
+                  }
+                }}
                 className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base">
 
-                  Continuar
+                  {cameraRequesting ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Acessando câmera...
+                    </>
+                  ) : (
+                    'Continuar'
+                  )}
                 </Button>
               </CardContent>
             </Card>
