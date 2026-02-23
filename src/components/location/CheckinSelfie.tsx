@@ -1,9 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, Camera, RefreshCw, Loader2 } from 'lucide-react';
+import * as cameraService from '@/services/cameraService';
 
-type Step = 'explain' | 'capture' | 'preview';
+type Step = 'capture' | 'preview';
 
 interface CheckinSelfieProps {
   onConfirm: (imageBlob: Blob) => void;
@@ -13,43 +13,26 @@ interface CheckinSelfieProps {
 }
 
 export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: CheckinSelfieProps) {
-  const [step, setStep] = useState<Step>('explain');
+  const [step, setStep] = useState<Step>('capture');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-  }, []);
+  // Attach stream to video element when on capture step
+  useEffect(() => {
+    if (step !== 'capture') return;
 
-  const startCamera = useCallback(async () => {
-    setCameraError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      console.error('[Selfie] Camera error:', err);
+    const stream = cameraService.getStream();
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+      setCameraError(null);
+    } else {
       setCameraError('Não foi possível acessar a câmera. Verifique as permissões.');
     }
-  }, []);
-
-  const handleContinueToCamera = async () => {
-    setStep('capture');
-    // Small delay to ensure video element is rendered
-    setTimeout(() => startCamera(), 100);
-  };
+  }, [step]);
 
   const handleCapture = () => {
     const video = videoRef.current;
@@ -77,7 +60,6 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
       if (blob) {
         setCapturedBlob(blob);
         setCapturedImage(URL.createObjectURL(blob));
-        stopCamera();
         setStep('preview');
       }
     }, 'image/jpeg', 0.85);
@@ -86,8 +68,14 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
   const handleRetake = async () => {
     setCapturedImage(null);
     setCapturedBlob(null);
+    setCameraError(null);
+    try {
+      await cameraService.requestCamera();
+    } catch (err) {
+      console.error('[Selfie] Camera retry failed:', err);
+      setCameraError('Não foi possível acessar a câmera. Verifique as permissões.');
+    }
     setStep('capture');
-    setTimeout(() => startCamera(), 100);
   };
 
   const handleUsePhoto = () => {
@@ -97,58 +85,12 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
   };
 
   const handleCancel = () => {
-    stopCamera();
+    cameraService.stopCamera();
     onCancel();
   };
 
   return (
     <div className="space-y-4 animate-fade-in">
-      {/* Explain step */}
-      {step === 'explain' && (
-        <>
-          <div className="flex items-center gap-3 mb-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-xl"
-              onClick={handleCancel}
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <h2 className="text-xl font-bold">Confirme que você está aqui agora</h2>
-          </div>
-
-          <Card className="border-0 shadow-sm">
-            <CardContent className="pt-6 space-y-5">
-              <p className="text-base text-foreground leading-relaxed">
-                Para entrar no local, precisamos de uma selfie feita neste momento.
-              </p>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Ela será exibida no seu card enquanto você estiver presente.
-                Ao sair do local, essa foto deixa de ser usada.
-              </p>
-
-              <div className="flex flex-col gap-2 pt-2">
-                <Button
-                  onClick={handleContinueToCamera}
-                  className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base"
-                >
-                  <Camera className="h-5 w-5 mr-2" />
-                  Continuar
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={handleCancel}
-                  className="w-full h-11 rounded-xl"
-                >
-                  Cancelar
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
-
       {/* Camera capture step */}
       {step === 'capture' && (
         <>
@@ -174,7 +116,7 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
                     variant="outline"
                     size="sm"
                     className="text-white border-white/30 hover:bg-white/10 text-xs opacity-60"
-                    onClick={() => { stopCamera(); onSkip(); }}
+                    onClick={() => { cameraService.stopCamera(); onSkip(); }}
                   >
                     Pular selfie (Modo Teste)
                   </Button>
