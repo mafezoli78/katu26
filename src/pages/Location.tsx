@@ -270,7 +270,7 @@ export default function Location() {
     setStep('expression');
   };
 
-  const handleActivatePresence = async (selfieUrl?: string) => {
+  const handleActivatePresence = async (selfieUrl?: string, selfieSource?: 'camera' | 'upload') => {
     setActivating(true);
 
     try {
@@ -302,7 +302,9 @@ export default function Location() {
           from('presence').
           update({
             checkin_selfie_url: selfieUrl,
-            checkin_selfie_created_at: new Date().toISOString()
+            checkin_selfie_created_at: new Date().toISOString(),
+            selfie_provided: selfieSource === 'camera',
+            selfie_source: selfieSource || 'camera',
           }).
           eq('user_id', user.id).
           eq('ativo', true);
@@ -316,7 +318,7 @@ export default function Location() {
     }
   };
 
-  const handleSelfieConfirm = async (blob: Blob) => {
+  const handleSelfieConfirm = async (blob: Blob, source: 'camera' | 'upload') => {
     if (!user) return;
     setActivating(true);
 
@@ -325,7 +327,7 @@ export default function Location() {
       const fileName = `${user.id}/${Date.now()}.jpg`;
       const { error: uploadError } = await supabase.storage.
       from('checkin-selfies').
-      upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+      upload(fileName, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
 
       if (uploadError) {
         toast({ variant: 'destructive', title: 'Erro ao enviar foto' });
@@ -337,8 +339,8 @@ export default function Location() {
       from('checkin-selfies').
       getPublicUrl(fileName);
 
-      // Activate presence with selfie URL
-      await handleActivatePresence(urlData.publicUrl);
+      // Activate presence with selfie URL and source metadata
+      await handleActivatePresence(urlData.publicUrl, source);
     } catch (err) {
       toast({ variant: 'destructive', title: 'Erro inesperado' });
       setActivating(false);
@@ -577,16 +579,12 @@ export default function Location() {
                   setCameraRequesting(true);
                   try {
                     await cameraService.requestCamera();
-                    setStep('selfie');
                   } catch (err) {
                     console.error('[Location] Camera request failed:', err);
-                    toast({
-                      variant: 'destructive',
-                      title: 'Não foi possível acessar a câmera',
-                      description: 'Verifique as permissões do navegador.',
-                    });
+                    // Don't block — let CheckinSelfie manage the fallback
                   } finally {
                     setCameraRequesting(false);
+                    setStep('selfie');  // Always navigate, with or without stream
                   }
                 }}
                 className="w-full h-12 rounded-xl bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-base">
@@ -610,9 +608,7 @@ export default function Location() {
         <CheckinSelfie
           onConfirm={handleSelfieConfirm}
           onCancel={handleSelfieCancel}
-          uploading={activating}
-          // TODO: REMOVE BEFORE PRODUCTION - Skip selfie for dev testing
-          onSkip={() => handleActivatePresence('https://ui-avatars.com/api/?name=Test&background=1E8FD3&color=fff&size=256')} />
+          uploading={activating} />
 
         }
       </div>
