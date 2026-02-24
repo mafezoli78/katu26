@@ -74,16 +74,16 @@ export function CheckinSelfie({ onConfirm, onCancel, onSkip, uploading }: Checki
   };
 
   const handleRetake = async () => {
-    setCapturedImage(null);
-    setCapturedBlob(null);
-    setCameraError(null);
     try {
       await cameraService.requestCamera();
+      setCapturedImage(null);
+      setCapturedBlob(null);
+      setCameraError(null);
+      setStep('capture');
     } catch (err) {
       console.error('[Selfie] Camera retry failed:', err);
       setCameraError('Não foi possível acessar a câmera. Verifique as permissões.');
     }
-    setStep('capture');
   };
 
   const handleUsePhoto = () => {
