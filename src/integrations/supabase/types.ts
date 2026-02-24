@@ -280,6 +280,8 @@ export type Database = {
           is_confirmed: boolean
           location_id: string | null
           place_id: string | null
+          selfie_provided: boolean | null
+          selfie_source: string | null
           ultima_atividade: string
           user_id: string
         }
@@ -298,6 +300,8 @@ export type Database = {
           is_confirmed?: boolean
           location_id?: string | null
           place_id?: string | null
+          selfie_provided?: boolean | null
+          selfie_source?: string | null
           ultima_atividade?: string
           user_id: string
         }
@@ -316,6 +320,8 @@ export type Database = {
           is_confirmed?: boolean
           location_id?: string | null
           place_id?: string | null
+          selfie_provided?: boolean | null
+          selfie_source?: string | null
           ultima_atividade?: string
           user_id?: string
         }
