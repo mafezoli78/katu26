@@ -1,58 +1,104 @@
-# Correção: Tornar parâmetros de handleActivatePresence obrigatórios
+# Tornar UPDATE de Selfie Determinístico via presence_id
 
-## Problema
+## Análise do código atual
 
-`handleActivatePresence` aceita `selfieUrl` e `selfieSource` como opcionais (`?`), permitindo teoricamente ativar presença sem selfie validada.
-
-## Análise
-
-Verifiquei todos os call sites de `handleActivatePresence` no código atual:
-
-1. **Linha 343** — chamado por `handleSelfieConfirm(blob, source)` com ambos os parâmetros preenchidos. Este é o único ponto de chamada.
-
-Não há nenhuma outra invocação direta. O risco é futuro: a assinatura opcional convida a chamadas sem parâmetros.
-
-## Alteração
-
-### `src/pages/Location.tsx` — Linha 273
-
-Alterar a assinatura de:
+O RPC `activate_presence` já retorna o `presence_id` (UUID) na linha 613 de `usePresence.ts`:
 
 ```text
-const handleActivatePresence = async (selfieUrl?: string, selfieSource?: 'camera' | 'upload') => {
+const { data: newPresenceId, error } = await supabase.rpc('activate_presence', {...});
 ```
 
-Para:
+Porém esse valor é descartado — `activatePresenceAtPlace` retorna apenas `{ error }` (linha 632). O mesmo ocorre com `createTemporaryPlace`, que chama `activatePresenceAtPlace` internamente e também não propaga o ID.
+
+Em `Location.tsx`, o UPDATE da selfie usa `eq('user_id', user.id).eq('ativo', true)` — um filtro não-determinístico que pode falhar silenciosamente se o INSERT ainda não propagou.
+
+## Alterações
+
+### 1. `src/hooks/usePresence.ts` — activatePresenceAtPlace (linhas 559-638)
+
+Alterar retorno de `{ error: null }` para `{ error: null, presenceId: newPresenceId }`.
+
+Alterar os retornos de erro para incluir `presenceId: null`.
+
+Tipo de retorno passa a ser `{ error: Error | null; presenceId: string | null }`.
+
+### 2. `src/hooks/usePresence.ts` — createTemporaryPlace (linhas 642-687)
+
+Na linha 680, capturar `presenceId` do retorno de `activatePresenceAtPlace`:
 
 ```text
-const handleActivatePresence = async (selfieUrl: string, selfieSource: 'camera' | 'upload') => {
+const { error: presenceError, presenceId } = await activatePresenceAtPlace(...)
 ```
 
-### Consequência na linha 300
-
-Mesmo com parâmetros obrigatórios, manter validação defensiva explícita dentro da função. Caso exista o guard if (selfieUrl && user), substituí-lo por:
+Alterar retorno para incluir `presenceId`:
 
 ```text
-if (!selfieUrl) {
-  throw new Error('Presence activation requires selfieUrl');
+return { error: null, placeId: placeData.id, presenceId };
+```
+
+Tipo de retorno passa a ser `{ error: Error | null; placeId: string | null; presenceId: string | null }`.
+
+### 3. `src/pages/Location.tsx` — handleActivatePresence (linhas 273-321)
+
+Capturar `presenceId` de ambos os caminhos:
+
+```text
+let presenceId: string | null = null;
+
+if (selectedPlaceId) {
+  const result = await activatePresenceAtPlace(...);
+  error = result.error;
+  presenceId = result.presenceId;
+} else if (newPlaceName.trim() && userCoords) {
+  const result = await createTemporaryPlace(...);
+  error = result.error;
+  presenceId = result.presenceId;
 }
 ```
 
-e manter a verificação de user separadamente.
+Substituir o UPDATE (linhas 303-312):
 
-Se houver fallback selfieSource || 'camera', removê-lo e utilizar selfieSource diretamente, pois agora é obrigatório.
+```text
+if (!presenceId) {
+  throw new Error('Presence ID not returned after activation');
+}
 
-## Arquivo alterado
+await supabase
+  .from('presence')
+  .update({
+    checkin_selfie_url: selfieUrl,
+    checkin_selfie_created_at: new Date().toISOString(),
+    selfie_provided: selfieSource === 'camera',
+    selfie_source: selfieSource,
+  })
+  .eq('id', presenceId);
+
+const { data: updatedPresence, error: updateError } = await supabase
+  .from('presence')
+  .select('id')
+  .eq('id', presenceId)
+  .single();
+
+if (updateError || !updatedPresence) {
+  throw new Error('Selfie update failed — presence not yet visible after activation');
+}
+```
+
+## Arquivos alterados
 
 
-| Arquivo                  | Alteração                                                             |
-| ------------------------ | --------------------------------------------------------------------- |
-| `src/pages/Location.tsx` | Tornar parâmetros obrigatórios e manter validação defensiva explícita |
+| Arquivo                    | Alteração                                                    |
+| -------------------------- | ------------------------------------------------------------ |
+| `src/hooks/usePresence.ts` | activatePresenceAtPlace retorna presenceId                   |
+| `src/hooks/usePresence.ts` | createTemporaryPlace propaga presenceId                      |
+| `src/pages/Location.tsx`   | Captura presenceId e usa no UPDATE via .eq('id', presenceId) |
 
 
 ## O que NÃO muda
 
 - CheckinSelfie.tsx
 - cameraService.ts
-- Layout ou UX
-- Lógica de upload/fallback
+- RPC activate_presence (já retorna o ID)
+- UI ou UX
+- Fluxo de fallback upload
+- Conversas e waves
