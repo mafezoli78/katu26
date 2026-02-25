@@ -270,7 +270,11 @@ export default function Location() {
     setStep('expression');
   };
 
-  const handleActivatePresence = async (selfieUrl?: string, selfieSource?: 'camera' | 'upload') => {
+  const handleActivatePresence = async (selfieUrl: string, selfieSource: 'camera' | 'upload') => {
+    if (!user) return;
+    if (!selfieUrl) {
+      throw new Error('Presence activation requires selfieUrl');
+    }
     setActivating(true);
 
     try {
@@ -296,19 +300,17 @@ export default function Location() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao ativar presença', description: error.message });
       } else {
-        // Update presence with selfie URL if provided
-        if (selfieUrl && user) {
-          await supabase.
-          from('presence').
-          update({
-            checkin_selfie_url: selfieUrl,
-            checkin_selfie_created_at: new Date().toISOString(),
-            selfie_provided: selfieSource === 'camera',
-            selfie_source: selfieSource || 'camera',
-          }).
-          eq('user_id', user.id).
-          eq('ativo', true);
-        }
+        await supabase.
+        from('presence').
+        update({
+          checkin_selfie_url: selfieUrl,
+          checkin_selfie_created_at: new Date().toISOString(),
+          selfie_provided: selfieSource === 'camera',
+          selfie_source: selfieSource,
+        }).
+        eq('user_id', user.id).
+        eq('ativo', true);
+
         navigate('/home', { replace: true });
       }
     } catch (err) {
