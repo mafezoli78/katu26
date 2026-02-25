@@ -557,10 +557,10 @@ export function usePresence() {
   // Activate presence using centralized RPC (atomic, with concurrency lock)
   // The RPC handles: cleanup of previous presence, wave expiration, and new presence creation
   const activatePresenceAtPlace = async (placeId: string, intentionId: string, assuntoAtual?: string) => {
-    if (!user) return { error: new Error('Not authenticated') };
+    if (!user) return { error: new Error('Not authenticated'), presenceId: null };
 
     if (!placeId) {
-      return { error: new Error('place_id é obrigatório para criar presença') };
+      return { error: new Error('place_id é obrigatório para criar presença'), presenceId: null };
     }
 
     console.log(`[Presence] 🔄 Activating presence at place: ${placeId}`);
@@ -620,7 +620,7 @@ export function usePresence() {
       if (error) {
         console.error('[Presence] ❌ Error in activate_presence RPC:', error);
         setIsEnteringPlace(false);
-        return { error };
+        return { error, presenceId: null };
       }
 
       console.log(`[Presence] ✅ Presence activated: ${newPresenceId}`);
@@ -629,7 +629,7 @@ export function usePresence() {
       // Fetch the newly created presence and place details
       await fetchCurrentPresence();
 
-      return { error: null };
+      return { error: null, presenceId: newPresenceId as string | null };
     } finally {
       // CRITICAL: Only clear isEnteringPlace AFTER fetchCurrentPresence completes
       // This ensures the Home guard sees the new presence before unblocking
@@ -645,8 +645,8 @@ export function usePresence() {
     longitude: number, 
     intentionId: string,
     assuntoAtual?: string
-  ): Promise<{ error: Error | null; placeId: string | null }> => {
-    if (!user) return { error: new Error('Not authenticated'), placeId: null };
+  ): Promise<{ error: Error | null; placeId: string | null; presenceId: string | null }> => {
+    if (!user) return { error: new Error('Not authenticated'), placeId: null, presenceId: null };
 
     // Calculate expiration
     const expiresAt = new Date(Date.now() + TEMPORARY_PLACE_DURATION_MS).toISOString();
@@ -671,19 +671,19 @@ export function usePresence() {
 
     if (placeError) {
       console.error('[usePresence] Error creating temporary place:', placeError);
-      return { error: new Error('Não foi possível criar o local temporário'), placeId: null };
+      return { error: new Error('Não foi possível criar o local temporário'), placeId: null, presenceId: null };
     }
 
     console.log(`[usePresence] ✅ Temporary place created: ${placeData.id}`);
 
     // Activate presence at the new place with optional expression
-    const { error: presenceError } = await activatePresenceAtPlace(placeData.id, intentionId, assuntoAtual);
+    const { error: presenceError, presenceId } = await activatePresenceAtPlace(placeData.id, intentionId, assuntoAtual);
 
     if (presenceError) {
-      return { error: presenceError, placeId: null };
+      return { error: presenceError, placeId: null, presenceId: null };
     }
 
-    return { error: null, placeId: placeData.id };
+    return { error: null, placeId: placeData.id, presenceId };
   };
 
   const renewPresence = async () => {
