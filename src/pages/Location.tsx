@@ -279,11 +279,13 @@ export default function Location() {
 
     try {
       let error: Error | null = null;
+      let presenceId: string | null = null;
       const trimmedExpression = expressionText.trim() || undefined;
 
       if (selectedPlaceId) {
         const result = await activatePresenceAtPlace(selectedPlaceId, DEFAULT_INTENTION_ID, trimmedExpression);
         error = result.error;
+        presenceId = result.presenceId;
       } else if (newPlaceName.trim() && userCoords) {
         const result = await createTemporaryPlace(
           newPlaceName.trim(),
@@ -293,6 +295,7 @@ export default function Location() {
           trimmedExpression
         );
         error = result.error;
+        presenceId = result.presenceId;
       } else {
         error = new Error('Nenhum local selecionado');
       }
@@ -300,16 +303,19 @@ export default function Location() {
       if (error) {
         toast({ variant: 'destructive', title: 'Erro ao ativar presença', description: error.message });
       } else {
-        await supabase.
-        from('presence').
-        update({
-          checkin_selfie_url: selfieUrl,
-          checkin_selfie_created_at: new Date().toISOString(),
-          selfie_provided: selfieSource === 'camera',
-          selfie_source: selfieSource,
-        }).
-        eq('user_id', user.id).
-        eq('ativo', true);
+        if (!presenceId) {
+          throw new Error('Presence ID not returned after activation');
+        }
+
+        await supabase
+          .from('presence')
+          .update({
+            checkin_selfie_url: selfieUrl,
+            checkin_selfie_created_at: new Date().toISOString(),
+            selfie_provided: selfieSource === 'camera',
+            selfie_source: selfieSource,
+          })
+          .eq('id', presenceId);
 
         navigate('/home', { replace: true });
       }
