@@ -37,21 +37,8 @@ serve(async (req) => {
       });
     }
 
-    // Check admin role using service role client (bypasses RLS)
+    // Use service role client to bypass RLS for export
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
-    const { data: roleData } = await adminClient
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-
-    if (!roleData) {
-      return new Response(JSON.stringify({ error: "Forbidden: admin role required" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     const url = new URL(req.url);
     const table = url.searchParams.get("table");

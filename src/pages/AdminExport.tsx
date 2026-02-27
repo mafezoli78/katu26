@@ -35,40 +35,15 @@ export default function AdminExport() {
   const [loadingSchema, setLoadingSchema] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Check admin role
   useEffect(() => {
     if (!user) {
       navigate('/auth');
       return;
     }
-    checkAdminRole();
+    setIsAdmin(true);
+    fetchCounts();
+    fetchSchema();
   }, [user]);
-
-  const checkAdminRole = async () => {
-    try {
-      const { data } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user!.id)
-        .eq('role', 'admin')
-        .maybeSingle();
-      
-      if (!data) {
-        setIsAdmin(false);
-        toast({
-          title: 'Acesso negado',
-          description: 'Você não tem permissão de administrador.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      setIsAdmin(true);
-      fetchCounts();
-      fetchSchema();
-    } catch {
-      setIsAdmin(false);
-    }
-  };
 
   const fetchCounts = async () => {
     setLoadingCounts(true);
