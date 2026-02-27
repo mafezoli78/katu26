@@ -40,9 +40,19 @@ serve(async (req) => {
     // Use service role client to bypass RLS for export
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const url = new URL(req.url);
-    const table = url.searchParams.get("table");
-    const action = url.searchParams.get("action") || "export";
+    // Parse body for action and table
+    let action = "export";
+    let table: string | null = null;
+    try {
+      const body = await req.json();
+      action = body.action || "export";
+      table = body.table || null;
+    } catch {
+      // fallback to query params
+      const url = new URL(req.url);
+      action = url.searchParams.get("action") || "export";
+      table = url.searchParams.get("table");
+    }
 
     if (action === "schema") {
       // Return SQL schema for all tables

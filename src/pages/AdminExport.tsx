@@ -48,13 +48,9 @@ export default function AdminExport() {
   const fetchCounts = async () => {
     setLoadingCounts(true);
     try {
-      const { data, error } = await supabase.functions.invoke('admin-export', {
-        body: null,
-        method: 'GET',
+      const response = await supabase.functions.invoke('admin-export', {
+        body: { action: 'counts' },
       });
-      
-      // Use query params approach
-      const response = await supabase.functions.invoke('admin-export?action=counts');
       if (response.data?.counts) {
         setCounts(response.data.counts);
       }
@@ -68,7 +64,9 @@ export default function AdminExport() {
   const fetchSchema = async () => {
     setLoadingSchema(true);
     try {
-      const response = await supabase.functions.invoke('admin-export?action=schema');
+      const response = await supabase.functions.invoke('admin-export', {
+        body: { action: 'schema' },
+      });
       if (response.data?.schema) {
         setSchemaSQL(response.data.schema);
       }
@@ -82,7 +80,9 @@ export default function AdminExport() {
   const exportTable = async (tableName: string) => {
     setExportingTable(tableName);
     try {
-      const response = await supabase.functions.invoke(`admin-export?action=export&table=${tableName}`);
+      const response = await supabase.functions.invoke('admin-export', {
+        body: { action: 'export', table: tableName },
+      });
       
       if (response.error) {
         throw new Error(response.error.message);
