@@ -55,55 +55,7 @@ serve(async (req) => {
     }
 
     if (action === "schema") {
-      // Return SQL schema for all tables
-      const { data: schemaData, error: schemaError } = await adminClient.rpc("pg_catalog", {});
-      
-      // Manually build schema from known tables
-      const tables = [
-        "profiles", "presence", "places", "waves", "conversations",
-        "messages", "user_interests", "user_blocks", "user_mutes",
-        "intentions", "locations", "user_roles"
-      ];
-
-      let sqlOutput = "-- Katuu Database Schema Export\n";
-      sqlOutput += `-- Generated at: ${new Date().toISOString()}\n\n`;
-
-      for (const t of tables) {
-        const { data: cols } = await adminClient.rpc("get_table_columns", { table_name: t }).catch(() => ({ data: null }));
-        
-        // Fallback: query information_schema
-        const { data: columnData } = await adminClient
-          .from("information_schema.columns" as any)
-          .select("*")
-          .eq("table_schema", "public")
-          .eq("table_name", t);
-        
-        // We'll use a raw SQL approach instead
-      }
-
-      // Use raw SQL to get DDL
-      const schemaQuery = `
-        SELECT 
-          table_name,
-          column_name,
-          data_type,
-          udt_name,
-          is_nullable,
-          column_default,
-          character_maximum_length
-        FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        ORDER BY table_name, ordinal_position;
-      `;
-
-      const { data: allColumns, error: colErr } = await adminClient.rpc(
-        "exec_sql" as any, 
-        { query: schemaQuery }
-      ).catch(() => ({ data: null, error: "rpc not available" }));
-
-      // Since we can't run arbitrary SQL via RPC, build from known schema
       const schemaSQL = generateSchemaSQL();
-
       return new Response(JSON.stringify({ schema: schemaSQL }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
