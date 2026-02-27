@@ -412,16 +412,14 @@ export default function Profile() {
             </div>
           ) : (
             <div className="space-y-3">
-              {isAdmin && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => navigate('/admin/export')} 
-                  className="w-full h-11 rounded-xl"
-                >
-                  <Database className="h-4 w-4 mr-2" />
-                  Admin Export
-                </Button>
-              )}
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/admin/export')} 
+                className="w-full h-11 rounded-xl"
+              >
+                <Database className="h-4 w-4 mr-2" />
+                Admin Export
+              </Button>
               <Button 
                 variant="outline" 
                 onClick={handleLogout} 
