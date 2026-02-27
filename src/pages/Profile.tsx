@@ -16,8 +16,9 @@ import { EmailChangeDialog } from '@/components/profile/EmailChangeDialog';
 import { PasswordChangeDialog } from '@/components/profile/PasswordChangeDialog';
 import { 
   Camera, LogOut, Check, User, Heart, Pencil, X, 
-  Calendar, Mail, Lock, AlertCircle 
+  Calendar, Mail, Lock, AlertCircle, Database 
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const AVAILABLE_INTERESTS = [
   'Música', 'Cinema', 'Esportes', 'Tecnologia', 'Viagens', 'Gastronomia',
@@ -48,6 +49,19 @@ export default function Profile() {
   // Dialogs state
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check admin role
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
+      .maybeSingle()
+      .then(({ data }) => setIsAdmin(!!data));
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -397,14 +411,26 @@ export default function Profile() {
               </Button>
             </div>
           ) : (
-            <Button 
-              variant="outline" 
-              onClick={handleLogout} 
-              className="w-full h-11 rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10"
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              Sair da conta
-            </Button>
+            <div className="space-y-3">
+              {isAdmin && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => navigate('/admin/export')} 
+                  className="w-full h-11 rounded-xl"
+                >
+                  <Database className="h-4 w-4 mr-2" />
+                  Admin Export
+                </Button>
+              )}
+              <Button 
+                variant="outline" 
+                onClick={handleLogout} 
+                className="w-full h-11 rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Sair da conta
+              </Button>
+            </div>
           )}
         </div>
       </div>
